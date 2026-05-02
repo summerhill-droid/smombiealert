@@ -1,35 +1,16 @@
 /**
- * BehaviorStageCard.tsx — Real-time 3-Stage Behavior Classification Display
+ * BehaviorStageCard.tsx — Human-Centric Behavior Classification Display
  *
- * Visualizes the classifier output from BehaviorContext:
- *   - Current stage with animated highlight ring
- *   - IMU signal bars (accel variance, gyro variance, angle stability)
- *   - Touch event frequency indicators
- *   - Confidence score
- *   - Research-spec definitions for each stage
- *
- * Layout:
- *   ┌─────────────────────────────────────────┐
- *   │  BEHAVIOR CLASSIFICATION          [conf]│
- *   │  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐  │
- *   │  │  💬  │ │  👁  │ │  🧭  │ │  📵  │  │
- *   │  │Active│ │Passiv│ │ Tool │ │ Base │  │  ← stage selector
- *   │  └──────┘ └──────┘ └──────┘ └──────┘  │
- *   │  "Typing · Gaming · SNS Upload"         │
- *   │                                         │
- *   │  IMU Signals                            │
- *   │  Accel Variance  ████░░░░ 0.18          │
- *   │  Gyro Variance   ██░░░░░░ 0.06          │
- *   │  Angle Stability ██████░░ 12°           │
- *   │                                         │
- *   │  Touch Events (last 10s)                │
- *   │  Taps: 3  Scrolls: 0  Long: 1          │
- *   └─────────────────────────────────────────┘
+ * Redesigned to show human action silhouettes instead of abstract icons,
+ * with a glow effect on the active stage, icon-tagged touch stats,
+ * and larger data values for at-a-glance readability.
  */
 
 import React, { useEffect, useRef } from "react";
 import { Animated, StyleSheet, Text, View } from "react-native";
+import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
+import { HumanFigure } from "@/components/HumanFigure";
 import {
   useBehavior,
   STAGE_LABELS,
@@ -38,20 +19,7 @@ import {
   type BehaviorStage,
 } from "@/context/BehaviorContext";
 
-// ─── Stage configuration ──────────────────────────────────────────────────────
-
-const STAGE_ICONS: Record<BehaviorStage, string> = {
-  active:   "💬",
-  passive:  "👁️",
-  tool:     "🧭",
-  baseline: "📵",
-};
-
 const STAGE_ORDER: BehaviorStage[] = ["active", "passive", "tool", "baseline"];
-
-interface StageConfig {
-  color: (colors: ReturnType<typeof useColors>) => string;
-}
 
 function getStageColor(
   stage: BehaviorStage,
@@ -65,11 +33,11 @@ function getStageColor(
   }
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// ─── Animated signal bar ──────────────────────────────────────────────────────
 
 interface SignalBarProps {
   label: string;
-  value: number;   // 0–100 normalized
+  value: number;
   displayValue: string;
   color: string;
   colors: ReturnType<typeof useColors>;
@@ -108,21 +76,47 @@ function SignalBar({ label, value, displayValue, color, colors }: SignalBarProps
   );
 }
 
+// ─── Touch stat with icon ─────────────────────────────────────────────────────
+
+function TouchStat({
+  icon,
+  label,
+  value,
+  threshold,
+  colors,
+}: {
+  icon: keyof typeof Feather.glyphMap;
+  label: string;
+  value: number;
+  threshold: number;
+  colors: ReturnType<typeof useColors>;
+}) {
+  const isHigh = value >= threshold;
+  const tint = isHigh ? colors.warning : colors.mutedForeground;
+  return (
+    <View style={[styles.touchPill, { backgroundColor: isHigh ? colors.warning + "20" : colors.muted }]}>
+      <Feather name={icon} size={12} color={tint} />
+      <Text style={[styles.touchValue, { color: isHigh ? colors.warning : colors.foreground }]}>
+        {value}
+      </Text>
+      <Text style={[styles.touchLabel, { color: colors.mutedForeground }]}>{label}</Text>
+    </View>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 interface BehaviorStageCardProps {
-  /** Whether monitoring is active (hides card when not monitoring) */
   isMonitoring: boolean;
 }
 
 export function BehaviorStageCard({ isMonitoring }: BehaviorStageCardProps) {
-  const colors  = useColors();
+  const colors = useColors();
   const { behaviorStage, reading } = useBehavior();
 
   const fadeAnim  = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  // Fade in when monitoring starts
   useEffect(() => {
     Animated.timing(fadeAnim, {
       toValue: isMonitoring ? 1 : 0,
@@ -131,7 +125,6 @@ export function BehaviorStageCard({ isMonitoring }: BehaviorStageCardProps) {
     }).start();
   }, [isMonitoring, fadeAnim]);
 
-  // Pulse animation when stage changes
   useEffect(() => {
     Animated.sequence([
       Animated.timing(pulseAnim, { toValue: 1.03, duration: 150, useNativeDriver: true }),
@@ -144,7 +137,6 @@ export function BehaviorStageCard({ isMonitoring }: BehaviorStageCardProps) {
   const stageColor = getStageColor(behaviorStage, colors);
   const riskLabel  = STAGE_RISK[behaviorStage];
 
-  // Normalize IMU values to 0–100 for display bars
   const accelNorm  = Math.min(100, (reading.accelVariance / 0.5) * 100);
   const gyroNorm   = Math.min(100, (reading.gyroVariance  / 0.2) * 100);
   const stableNorm = Math.min(100, (reading.angleStability / 30) * 100);
@@ -154,11 +146,11 @@ export function BehaviorStageCard({ isMonitoring }: BehaviorStageCardProps) {
       style={[
         styles.card,
         {
-          backgroundColor:  colors.card,
-          borderColor:      stageColor + "60",
-          opacity:          fadeAnim,
-          transform:        [{ scale: pulseAnim }],
-          shadowColor:      stageColor,
+          backgroundColor: colors.card,
+          borderColor:     stageColor + "60",
+          opacity:         fadeAnim,
+          transform:       [{ scale: pulseAnim }],
+          shadowColor:     stageColor,
         },
       ]}
     >
@@ -174,23 +166,29 @@ export function BehaviorStageCard({ isMonitoring }: BehaviorStageCardProps) {
         </View>
       </View>
 
-      {/* ── Stage selector row ──────────────────────────────────────── */}
+      {/* ── Human silhouette stage selector ─────────────────────────── */}
       <View style={styles.stageRow}>
         {STAGE_ORDER.map((stage) => {
           const isActive = stage === behaviorStage;
           const sColor   = getStageColor(stage, colors);
           return (
-            <View
-              key={stage}
-              style={[
-                styles.stageButton,
-                {
-                  backgroundColor: isActive ? sColor + "20" : colors.muted,
-                  borderColor:     isActive ? sColor        : "transparent",
-                },
-              ]}
-            >
-              <Text style={styles.stageIcon}>{STAGE_ICONS[stage]}</Text>
+            <View key={stage} style={styles.stageCell}>
+              {/* Glow / highlight behind the selected figure */}
+              <View
+                style={[
+                  styles.figureWrap,
+                  {
+                    backgroundColor: isActive ? sColor + "18" : "transparent",
+                    borderColor:     isActive ? sColor + "80" : "transparent",
+                  },
+                ]}
+              >
+                <HumanFigure
+                  stage={stage}
+                  color={isActive ? sColor : colors.mutedForeground + "80"}
+                  size={28}
+                />
+              </View>
               <Text
                 style={[
                   styles.stageLabel,
@@ -205,16 +203,14 @@ export function BehaviorStageCard({ isMonitoring }: BehaviorStageCardProps) {
         })}
       </View>
 
-      {/* ── Stage name + example ─────────────────────────────────────── */}
+      {/* ── Stage name + examples ────────────────────────────────────── */}
       <View style={[styles.stageInfo, { backgroundColor: stageColor + "10" }]}>
         <View style={styles.stageInfoRow}>
           <Text style={[styles.stageName, { color: stageColor }]}>
             {STAGE_LABELS[behaviorStage]}
           </Text>
           <View style={[styles.riskBadge, { backgroundColor: stageColor + "25" }]}>
-            <Text style={[styles.riskText, { color: stageColor }]}>
-              {riskLabel} RISK
-            </Text>
+            <Text style={[styles.riskText, { color: stageColor }]}>{riskLabel} RISK</Text>
           </View>
         </View>
         <Text style={[styles.stageExamples, { color: colors.mutedForeground }]}>
@@ -222,112 +218,69 @@ export function BehaviorStageCard({ isMonitoring }: BehaviorStageCardProps) {
         </Text>
       </View>
 
-      {/* ── IMU Signal bars ─────────────────────────────────────────── */}
+      {/* ── IMU Signals ──────────────────────────────────────────────── */}
       <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
-          IMU Signals
-        </Text>
+        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>IMU Signals</Text>
         <SignalBar
-          label="Accel Variance"
+          label="Accel Var."
           value={accelNorm}
           displayValue={reading.accelVariance.toFixed(3)}
           color={accelNorm > 60 ? colors.danger : accelNorm > 30 ? colors.warning : colors.safe}
           colors={colors}
         />
         <SignalBar
-          label="Gyro Variance"
+          label="Gyro Var."
           value={gyroNorm}
           displayValue={reading.gyroVariance.toFixed(3)}
           color={gyroNorm > 50 ? colors.warning : colors.safe}
           colors={colors}
         />
         <SignalBar
-          label="Angle Stability"
+          label="Stability"
           value={stableNorm}
           displayValue={`${reading.angleStability.toFixed(1)}°`}
           color={stableNorm < 30 ? colors.safe : stableNorm < 60 ? colors.warning : colors.danger}
           colors={colors}
         />
+
+        {/* Pitch angle — big value, small label */}
         <View style={styles.pitchRow}>
-          <Text style={[styles.signalLabel, { color: colors.mutedForeground }]}>
-            Pitch Angle
-          </Text>
-          <Text style={[styles.pitchValue, { color: colors.foreground }]}>
-            {reading.pitchAngle}°{" "}
+          <Text style={[styles.pitchLabel, { color: colors.mutedForeground }]}>Pitch Angle</Text>
+          <View style={styles.pitchRight}>
+            <Text style={[styles.pitchBigValue, { color: colors.foreground }]}>
+              {reading.pitchAngle}°
+            </Text>
             <Text
-              style={{
-                color:
-                  reading.pitchAngle >= 40 && reading.pitchAngle <= 85
-                    ? colors.warning
-                    : colors.mutedForeground,
-              }}
+              style={[
+                styles.pitchTag,
+                {
+                  color:
+                    reading.pitchAngle >= 40 && reading.pitchAngle <= 85
+                      ? colors.warning
+                      : colors.mutedForeground,
+                },
+              ]}
             >
               {reading.pitchAngle >= 40 && reading.pitchAngle <= 85
-                ? "(reading posture)"
-                : "(normal)"}
+                ? "reading posture"
+                : "normal"}
             </Text>
-          </Text>
+          </View>
         </View>
       </View>
 
-      {/* ── Touch Events ────────────────────────────────────────────── */}
-      <View style={[styles.section, styles.touchRow]}>
-        <Text style={[styles.sectionTitle, { color: colors.foreground, flex: 0, marginBottom: 0 }]}>
-          Touch (10s){"  "}
-        </Text>
-        <TouchStat
-          label="Taps"
-          value={reading.tapCount10s}
-          threshold={3}
-          colors={colors}
-        />
-        <TouchStat
-          label="Scrolls"
-          value={reading.scrollCount10s}
-          threshold={2}
-          colors={colors}
-        />
-        <TouchStat
-          label="Long"
-          value={reading.longpressCount30s}
-          threshold={1}
-          colors={colors}
-        />
+      {/* ── Touch events — horizontal row with icons ─────────────────── */}
+      <View style={styles.touchRow}>
+        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Touch (10s)</Text>
+        <View style={styles.touchStats}>
+          <TouchStat icon="mouse-pointer" label="Taps"    value={reading.tapCount10s}      threshold={3} colors={colors} />
+          <TouchStat icon="arrow-down"    label="Scrolls" value={reading.scrollCount10s}    threshold={2} colors={colors} />
+          <TouchStat icon="clock"         label="Long"    value={reading.longpressCount30s} threshold={1} colors={colors} />
+        </View>
       </View>
     </Animated.View>
   );
 }
-
-// ─── Touch stat pill ──────────────────────────────────────────────────────────
-
-function TouchStat({
-  label,
-  value,
-  threshold,
-  colors,
-}: {
-  label: string;
-  value: number;
-  threshold: number;
-  colors: ReturnType<typeof useColors>;
-}) {
-  const isHigh = value >= threshold;
-  return (
-    <View
-      style={[
-        styles.touchStatPill,
-        { backgroundColor: isHigh ? colors.warning + "20" : colors.muted },
-      ]}
-    >
-      <Text style={[styles.touchStatValue, { color: isHigh ? colors.warning : colors.foreground }]}>
-        {value}
-      </Text>
-      <Text style={[styles.touchStatLabel, { color: colors.mutedForeground }]}>{label}</Text>
-    </View>
-  );
-}
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   card: {
@@ -346,8 +299,8 @@ const styles = StyleSheet.create({
     alignItems:     "center",
   },
   cardTitle: {
-    fontSize:   13,
-    fontFamily: "Inter_700Bold",
+    fontSize:      13,
+    fontFamily:    "Inter_700Bold",
     letterSpacing: 0.5,
     textTransform: "uppercase",
   },
@@ -364,20 +317,23 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap:           6,
   },
-  stageButton: {
-    flex:           1,
-    alignItems:     "center",
-    paddingVertical: 8,
-    borderRadius:   10,
-    borderWidth:    1.5,
-    gap:            4,
+  stageCell: {
+    flex:       1,
+    alignItems: "center",
+    gap:        5,
   },
-  stageIcon: {
-    fontSize: 18,
+  figureWrap: {
+    borderRadius: 12,
+    borderWidth:  1.5,
+    paddingVertical:   8,
+    paddingHorizontal: 4,
+    alignItems:   "center",
+    justifyContent: "center",
+    width: "100%",
   },
   stageLabel: {
-    fontSize:   9,
-    fontFamily: "Inter_600SemiBold",
+    fontSize:      9,
+    fontFamily:    "Inter_600SemiBold",
     letterSpacing: 0.3,
     textTransform: "uppercase",
   },
@@ -401,8 +357,8 @@ const styles = StyleSheet.create({
     borderRadius:      20,
   },
   riskText: {
-    fontSize:   10,
-    fontFamily: "Inter_700Bold",
+    fontSize:      10,
+    fontFamily:    "Inter_700Bold",
     letterSpacing: 0.8,
   },
   stageExamples: {
@@ -410,9 +366,7 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     lineHeight: 17,
   },
-  section: {
-    gap: 8,
-  },
+  section: { gap: 8 },
   sectionTitle: {
     fontSize:      12,
     fontFamily:    "Inter_700Bold",
@@ -426,9 +380,9 @@ const styles = StyleSheet.create({
     gap:           8,
   },
   signalLabel: {
-    fontSize:   11,
+    fontSize:   10,
     fontFamily: "Inter_400Regular",
-    width:      100,
+    width:      68,
   },
   signalTrack: {
     flex:         1,
@@ -441,9 +395,9 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   signalValue: {
-    fontSize:   11,
-    fontFamily: "Inter_600SemiBold",
-    width:      36,
+    fontSize:   13,
+    fontFamily: "Inter_700Bold",
+    width:      40,
     textAlign:  "right",
   },
   pitchRow: {
@@ -452,28 +406,45 @@ const styles = StyleSheet.create({
     alignItems:     "center",
     paddingTop:     2,
   },
-  pitchValue: {
-    fontSize:   12,
-    fontFamily: "Inter_500Medium",
+  pitchLabel: {
+    fontSize:   10,
+    fontFamily: "Inter_400Regular",
+  },
+  pitchRight: {
+    alignItems: "flex-end",
+  },
+  pitchBigValue: {
+    fontSize:   20,
+    fontFamily: "Inter_700Bold",
+    lineHeight: 22,
+  },
+  pitchTag: {
+    fontSize:   10,
+    fontFamily: "Inter_400Regular",
+    marginTop:  1,
   },
   touchRow: {
+    gap: 8,
+  },
+  touchStats: {
     flexDirection: "row",
-    alignItems:    "center",
     gap:           6,
   },
-  touchStatPill: {
+  touchPill: {
     flex:           1,
+    flexDirection:  "column",
     alignItems:     "center",
-    paddingVertical: 6,
-    borderRadius:   8,
-    gap:            2,
+    paddingVertical: 8,
+    borderRadius:   10,
+    gap:            3,
   },
-  touchStatValue: {
-    fontSize:   16,
+  touchValue: {
+    fontSize:   18,
     fontFamily: "Inter_700Bold",
   },
-  touchStatLabel: {
-    fontSize:   10,
+  touchLabel: {
+    fontSize:   9,
     fontFamily: "Inter_500Medium",
+    letterSpacing: 0.2,
   },
 });

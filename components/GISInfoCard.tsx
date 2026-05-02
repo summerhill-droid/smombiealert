@@ -1,29 +1,10 @@
 /**
- * GISInfoCard.tsx — GIS environment risk factors panel
+ * GISInfoCard.tsx — GIS environment risk factors panel (redesigned)
  *
- * Shown on the Monitor screen below the sensor metrics.
- * Displays four live GIS factors from GISContext and the combined boost score.
- *
- * STATES:
- *   1. No permission → "Enable Location" button
- *   2. Permission granted, data loading → spinner in header
- *   3. Overpass API failed → error message with refresh button
- *   4. Data loaded → four factor rows + boost bar
- *
- * FOUR FACTORS (from research plan detection spec):
- *   Crosswalk — nearest crosswalk distance in metres
- *   Streetlights — count of street lamps within 80 m
- *   Traffic — OSM road type classification (None/Light/Moderate/Heavy)
- *   Slope — terrain grade % from GPS altitude delta
- *
- * COLOR CODING:
- *   green  = low risk    (crosswalk far, many lights, light traffic, flat)
- *   amber  = medium risk
- *   red    = high risk   (crosswalk < 50 m, no lights, heavy traffic, steep)
- *
- * BOOST BAR:
- *   Horizontal progress bar showing gisRiskBoost (0–100).
- *   Color matches severity: green < 30, amber 30–60, red > 60.
+ * Changes:
+ *  - "Enable Location" → "Check Nearby Hazards" with map-pin icon
+ *  - Warning triangle [!] next to loading/status text
+ *  - Motivational copy throughout
  */
 
 import React from "react";
@@ -33,11 +14,11 @@ import { TrafficLevel } from "@/context/GISContext";
 import { useColors } from "@/hooks/useColors";
 
 interface GISInfoCardProps {
-  nearestCrosswalkDist: number | null; // metres (null = none found within 350 m)
-  streetlightCount: number;            // count within 80 m
+  nearestCrosswalkDist: number | null;
+  streetlightCount: number;
   trafficLevel: TrafficLevel;
-  slope: number;                       // grade %
-  gisRiskBoost: number;               // combined score 0–100
+  slope: number;
+  gisRiskBoost: number;
   isLoading: boolean;
   error: string | null;
   onRefresh: () => void;
@@ -45,12 +26,6 @@ interface GISInfoCardProps {
   onRequestPermission: () => void;
 }
 
-// ── Sub-component: single factor row ──────────────────────────────────────────
-/**
- * Factor — one row in the four-factor grid.
- * Icon + label on the left, value in the center, risk label on the right.
- * Background tint and text colors reflect the risk level.
- */
 function Factor({
   icon,
   label,
@@ -67,7 +42,6 @@ function Factor({
   const colors = useColors();
   return (
     <View style={[styles.factor, { borderColor: colors.border, backgroundColor: colors.card }]}>
-      {/* Icon with 18% opacity background tint matching risk color */}
       <View style={[styles.factorIcon, { backgroundColor: `${riskColor}18` }]}>
         <Feather name={icon as keyof typeof Feather.glyphMap} size={15} color={riskColor} />
       </View>
@@ -75,13 +49,10 @@ function Factor({
         <Text style={[styles.factorLabel, { color: colors.mutedForeground }]}>{label}</Text>
         <Text style={[styles.factorValue, { color: colors.foreground }]}>{value}</Text>
       </View>
-      {/* Short risk assessment word: "Nearby!", "Dark!", "Safe", etc. */}
       <Text style={[styles.factorSub, { color: riskColor }]}>{sub}</Text>
     </View>
   );
 }
-
-// ── Main component ─────────────────────────────────────────────────────────────
 
 export function GISInfoCard({
   nearestCrosswalkDist,
@@ -97,7 +68,6 @@ export function GISInfoCard({
 }: GISInfoCardProps) {
   const colors = useColors();
 
-  // ── Permission not granted: show enable button ────────────────────────────
   if (!hasPermission) {
     return (
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -110,20 +80,18 @@ export function GISInfoCard({
           style={[styles.permBtn, { backgroundColor: colors.primary }]}
           activeOpacity={0.85}
         >
-          <Feather name="navigation" size={15} color={colors.primaryForeground} />
+          <Feather name="map-pin" size={16} color={colors.primaryForeground} />
           <Text style={[styles.permBtnText, { color: colors.primaryForeground }]}>
-            Enable Location
+            Check Nearby Hazards
           </Text>
         </TouchableOpacity>
         <Text style={[styles.permNote, { color: colors.mutedForeground }]}>
-          Required to load crosswalk, streetlight, traffic, and slope data
+          Grant location access to scan crosswalks, streetlights, traffic and slope nearby
         </Text>
       </View>
     );
   }
 
-  // ── Derive risk colors for each factor ────────────────────────────────────
-  // Crosswalk: red if very close, amber if nearby, green if far
   const crosswalkColor =
     nearestCrosswalkDist !== null && nearestCrosswalkDist < 50
       ? colors.danger
@@ -131,11 +99,9 @@ export function GISInfoCard({
       ? colors.warning
       : colors.safe;
 
-  // Streetlights: red if none, amber if few, green if sufficient
   const lightColor =
     streetlightCount === 0 ? colors.danger : streetlightCount < 3 ? colors.warning : colors.safe;
 
-  // Traffic: mirrors TRAFFIC_MAP severity
   const trafficColor =
     trafficLevel === "heavy"
       ? colors.danger
@@ -143,14 +109,11 @@ export function GISInfoCard({
       ? colors.warning
       : colors.safe;
 
-  // Slope: red > 10%, amber > 5%, green = flat
   const slopeColor = slope > 10 ? colors.danger : slope > 5 ? colors.warning : colors.safe;
 
-  // Overall boost bar color
   const boostColor =
     gisRiskBoost > 60 ? colors.danger : gisRiskBoost > 30 ? colors.warning : colors.safe;
 
-  // Human-readable traffic label
   const trafficLabel = {
     none: "None",
     light: "Light",
@@ -160,12 +123,17 @@ export function GISInfoCard({
 
   return (
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      {/* Header: title + loading spinner or refresh button */}
       <View style={styles.cardHeader}>
         <Feather name="map-pin" size={16} color={colors.primary} />
         <Text style={[styles.cardTitle, { color: colors.foreground }]}>GIS Risk Factors</Text>
         {isLoading ? (
-          <ActivityIndicator size="small" color={colors.primary} style={{ marginLeft: "auto" }} />
+          <View style={styles.loadingRow}>
+            <Feather name="alert-triangle" size={12} color={colors.warning} />
+            <Text style={[styles.loadingText, { color: colors.warning }]}>
+              Loading: crosswalk, streetlight…
+            </Text>
+            <ActivityIndicator size="small" color={colors.primary} />
+          </View>
         ) : (
           <TouchableOpacity onPress={onRefresh} style={{ marginLeft: "auto" }}>
             <Feather name="refresh-cw" size={14} color={colors.mutedForeground} />
@@ -173,11 +141,12 @@ export function GISInfoCard({
         )}
       </View>
 
-      {/* Error state: show message instead of factor rows */}
       {error ? (
-        <Text style={[styles.error, { color: colors.warning }]}>{error}</Text>
+        <View style={styles.errorRow}>
+          <Feather name="alert-triangle" size={14} color={colors.warning} />
+          <Text style={[styles.error, { color: colors.warning }]}>{error}</Text>
+        </View>
       ) : (
-        // Four factor rows
         <View style={styles.factorsGrid}>
           <Factor
             icon="crosshair"
@@ -216,7 +185,6 @@ export function GISInfoCard({
         </View>
       )}
 
-      {/* Combined boost bar (hidden when API error) */}
       {!error && (
         <View style={styles.boostRow}>
           <Text style={[styles.boostLabel, { color: colors.mutedForeground }]}>
@@ -233,7 +201,6 @@ export function GISInfoCard({
               ]}
             />
           </View>
-          {/* Numeric boost value (+30, +65, etc.) */}
           <Text style={[styles.boostPct, { color: boostColor }]}>+{gisRiskBoost}</Text>
         </View>
       )}
@@ -244,98 +211,115 @@ export function GISInfoCard({
 const styles = StyleSheet.create({
   card: {
     borderRadius: 14,
-    borderWidth: 1,
-    padding: 14,
-    gap: 12,
+    borderWidth:  1,
+    padding:      14,
+    gap:          12,
   },
   cardHeader: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
+    alignItems:    "center",
+    gap:           7,
+    flexWrap:      "wrap",
   },
   cardTitle: {
-    fontSize: 14,
+    fontSize:   14,
     fontFamily: "Inter_700Bold",
+  },
+  loadingRow: {
+    flexDirection: "row",
+    alignItems:    "center",
+    gap:           5,
+    marginLeft:    "auto",
+  },
+  loadingText: {
+    fontSize:   10,
+    fontFamily: "Inter_500Medium",
   },
   factorsGrid: { gap: 7 },
   factor: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    padding: 10,
-    borderRadius: 10,
-    borderWidth: 1,
+    alignItems:    "center",
+    gap:           10,
+    padding:       10,
+    borderRadius:  10,
+    borderWidth:   1,
   },
   factorIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
+    width:           30,
+    height:          30,
+    borderRadius:    8,
+    alignItems:      "center",
+    justifyContent:  "center",
   },
   factorText: { flex: 1 },
   factorLabel: {
-    fontSize: 10,
-    fontFamily: "Inter_500Medium",
+    fontSize:      10,
+    fontFamily:    "Inter_500Medium",
     letterSpacing: 0.5,
     textTransform: "uppercase",
   },
   factorValue: {
-    fontSize: 14,
+    fontSize:   14,
     fontFamily: "Inter_600SemiBold",
-    marginTop: 1,
+    marginTop:  1,
   },
   factorSub: {
-    fontSize: 12,
+    fontSize:   12,
     fontFamily: "Inter_600SemiBold",
   },
   boostRow: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
+    alignItems:    "center",
+    gap:           8,
   },
   boostLabel: {
-    fontSize: 11,
+    fontSize:   11,
     fontFamily: "Inter_500Medium",
-    flex: 0,
-    minWidth: 110,
+    flex:       0,
+    minWidth:   110,
   },
   boostTrack: {
-    flex: 1,
-    height: 5,
+    flex:         1,
+    height:       5,
     borderRadius: 3,
-    overflow: "hidden",
+    overflow:     "hidden",
   },
   boostFill: {
-    height: "100%",
+    height:       "100%",
     borderRadius: 3,
   },
   boostPct: {
-    fontSize: 12,
+    fontSize:   12,
     fontFamily: "Inter_700Bold",
-    minWidth: 28,
-    textAlign: "right",
+    minWidth:   28,
+    textAlign:  "right",
   },
   permBtn: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection:  "row",
+    alignItems:     "center",
     justifyContent: "center",
-    gap: 8,
-    paddingVertical: 11,
-    borderRadius: 10,
+    gap:            8,
+    paddingVertical: 13,
+    borderRadius:   12,
   },
   permBtnText: {
-    fontSize: 14,
-    fontFamily: "Inter_600SemiBold",
+    fontSize:   15,
+    fontFamily: "Inter_700Bold",
   },
   permNote: {
-    fontSize: 12,
+    fontSize:   12,
     fontFamily: "Inter_400Regular",
-    textAlign: "center",
+    textAlign:  "center",
     lineHeight: 17,
   },
+  errorRow: {
+    flexDirection: "row",
+    alignItems:    "flex-start",
+    gap:           6,
+  },
   error: {
-    fontSize: 12,
+    flex:       1,
+    fontSize:   12,
     fontFamily: "Inter_400Regular",
     lineHeight: 17,
   },

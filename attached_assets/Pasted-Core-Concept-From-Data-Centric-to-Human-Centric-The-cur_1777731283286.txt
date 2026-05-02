@@ -1,0 +1,59 @@
+Core Concept: "From Data-Centric to Human-Centric"
+The current design simply lists raw sensor data values. To improve readability, you should pivot to a design that intuitively shows how this data reflects the user's physical state using human icons.
+
+1. Behavior Classification: Static Icons to "Status Illustrations"
+The top section containing 'Active', 'Passive', and 'Tool' needs more visual clarity.
+
+Current Issue: Abstract symbols (speech bubbles, eyes) lack immediate context.
+
+Improvement: Use Human Action Silhouettes
+
+ACTIVE: A silhouette of a person walking energetically (swinging arms and legs).
+
+PASSIVE: A silhouette of a person standing still and looking down at a phone (current selection).
+
+TOOL: A silhouette of a person walking while operating a phone with one hand.
+
+BASELINE: A person in a neutral standing or sitting position.
+
+Design Tip: Use a soft yellow "glow" or aura around the selected icon (Passive) to make it pop.
+
+2. Live Sensors: Bar Graphs to "Body-Mapped Gauges"
+The horizontal bar graphs for sensor data should be more intuitive.
+
+Current Issue: Simple bars make it hard to visualize which body movements are generating the data.
+
+Improvement: Integrate a Human Silhouette Map
+
+Place a front-facing human silhouette illustration to the left of the sensor section.
+
+WALKING ACTIVITY (100%): Place a "Hotspot" (colored circle) on the legs of the silhouette and add a small shoe icon next to the graph title.
+
+PHONE ANGLE (100%): Place a hotspot on the arms and hands and add a small smartphone icon next to the title.
+
+DISTRACTION RISK (70%): Place an orange warning hotspot on the head/eyes area and add an eye icon next to the title.
+
+3. Layout and Readability Enhancements
+The data is currently too dense, making it difficult to spot critical information at a glance.
+
+Information Hierarchy: The "Stop Monitoring" checkbox is a primary control. Make it a larger, clearer button (e.g., a prominent button with a "Stop" square icon).
+
+Touch (10s) Section: Instead of three separate vertical cards, merge them into one horizontal row with icons.
+
+Example: [Finger Tap Icon] Taps: 0 | [Scroll Arrow Icon] Scrolls: 21 | [Long Press Icon] Long: 0
+
+IMU Signals Section: For values like "2.3°" in Angle Stability, increase the font size of the value and decrease the size of the label (text) to emphasize the data itself.
+
+4. GIS Risk Factors: Encouraging User Engagement
+The bottom section should feel more like a call to action.
+
+Current Issue: The "Enable Location" button looks like a generic system error.
+
+Improvement: Motivational Icons and Copy
+
+Inside the red button, use a Map Pin icon with more active text like "Check Nearby Hazards."
+
+Add a small warning triangle icon [!] next to the status text (e.g., [!] Loading: crosswalk, streetlight...).
+
+Conclusion
+By placing icons and illustrations directly related to human movement and body parts throughout the page, users will no longer have to struggle with reading complex numbers. Instead, they can instantly understand their status through the "Human Silhouette" shown by the app.
