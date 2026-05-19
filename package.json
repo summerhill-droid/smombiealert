@@ -55,7 +55,12 @@
     "zod-validation-error": "^3.4.0"
   },
   "dependencies": {
+    "expo-asset": "^55.0.17",
+    "expo-brightness": "^55.0.13",
+    "expo-dev-client": "^55.0.35",
+    "expo-keep-awake": "^55.0.8",
     "expo-sensors": "^15.0.8",
+    "onnxruntime-react-native": "^1.24.3",
     "react-native-maps": "1.18.0"
   }
 }

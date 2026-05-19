@@ -24,7 +24,6 @@ import { useColors }    from "@/hooks/useColors";
 import { IncidentCard } from "@/components/IncidentCard";
 import {
   STAGE_LABELS,
-  STAGE_ICONS_EMOJI,
   type BehaviorStage,
 } from "@/context/BehaviorContext";
 

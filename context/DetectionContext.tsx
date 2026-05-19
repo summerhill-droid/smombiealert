@@ -101,6 +101,10 @@ interface DetectionContextValue extends DetectionState {
   stopMonitoring: () => void;
   clearIncidents: () => void;
   setExternalContext: (ctx: GISContext) => void;
+  /** True when the full-screen Watching overlay should be shown. */
+  watchingLock: boolean;
+  /** User dismisses the Watching overlay (suppressed until stage changes). */
+  dismissWatchingLock: () => void;
 }
 
 const DetectionContext = createContext<DetectionContextValue | null>(null);
@@ -165,6 +169,10 @@ export function DetectionProvider({ children }: { children: React.ReactNode }) {
   const [sessionStartTime, setSessionStartTime] = useState<number | null>(null);
   const [gisBoost, setGisBoost] = useState(0);
   const [alertDurationSec, setAlertDurationSec] = useState(0);
+  const [watchingLock, setWatchingLock] = useState(false);
+  // While true, suppress re-showing the overlay until stage leaves "passive"
+  const watchingDismissedRef = useRef(false);
+  const lastStageForVibrationRef = useRef<BehaviorStage>("baseline");
 
   // ── Refs ──────────────────────────────────────────────────────────────
   const accelDataRef    = useRef({ x: 0, y: 0, z: 0 });
@@ -179,7 +187,45 @@ export function DetectionProvider({ children }: { children: React.ReactNode }) {
   // Keep behaviorRef in sync (readable inside analyzeMotion without closure issues)
   useEffect(() => {
     behaviorRef.current = behaviorStage;
-  }, [behaviorStage]);
+
+    // ── Per-class warning side-effects (ML model output → physical feedback) ──
+    // Only fire when monitoring is active.
+    if (!isMonitoring) {
+      lastStageForVibrationRef.current = behaviorStage;
+      return;
+    }
+    const prev = lastStageForVibrationRef.current;
+
+    if (behaviorStage !== prev) {
+      // Navigation (tool) or Typing (active) → short alert vibration + haptic
+      if (behaviorStage === "active") {
+        if (Platform.OS !== "web") {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+          Vibration.vibrate([0, 200, 100, 200, 100, 200]);
+        }
+      } else if (behaviorStage === "tool") {
+        if (Platform.OS !== "web") {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          Vibration.vibrate([0, 150, 100, 150]);
+        }
+      }
+    }
+    lastStageForVibrationRef.current = behaviorStage;
+
+    // ── Watching (passive) → full-screen blocking overlay ──────────────────
+    if (behaviorStage === "passive") {
+      if (!watchingDismissedRef.current) setWatchingLock(true);
+    } else {
+      // Stage changed away from passive — reset dismissal so future Watching re-triggers
+      watchingDismissedRef.current = false;
+      setWatchingLock(false);
+    }
+  }, [behaviorStage, isMonitoring]);
+
+  const dismissWatchingLock = useCallback(() => {
+    watchingDismissedRef.current = true;
+    setWatchingLock(false);
+  }, []);
 
   // ── Persistence ───────────────────────────────────────────────────────
   useEffect(() => { loadData(); }, []);
@@ -405,6 +451,8 @@ export function DetectionProvider({ children }: { children: React.ReactNode }) {
     setWalkingSpeed(0);
     setPhoneAngle(0);
     setAlertDurationSec(0);
+    setWatchingLock(false);
+    watchingDismissedRef.current = false;
     smombieStartRef.current = null;
     alertStartRef.current   = null;
 
@@ -449,6 +497,8 @@ export function DetectionProvider({ children }: { children: React.ReactNode }) {
         stopMonitoring,
         clearIncidents,
         setExternalContext,
+        watchingLock,
+        dismissWatchingLock,
       }}
     >
       {children}

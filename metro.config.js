@@ -11,6 +11,7 @@ config.resolver = {
   blockList: [
     /\.local\/.*/,
   ],
+  assetExts: [...(config.resolver.assetExts || []), "onnx", "bin", "ort"],
 };
 
 module.exports = config;

@@ -66,6 +66,8 @@ import React, {
 } from "react";
 import { Accelerometer, Gyroscope } from "expo-sensors";
 import { Platform } from "react-native";
+import { mlClassifier, type MLResult } from "@/services/MLClassifier";
+import type { MLClass } from "@/services/featureExtraction";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -113,6 +115,10 @@ export interface BehaviorReading {
   scrollCount10s: number;    // scrolls in last 10 seconds
   longpressCount30s: number; // long-presses in last 30 seconds
   avgTouchDuration: number;  // average touch hold time in ms
+  /** When the ONNX model produced this reading, the raw ML class. Null when fallback (threshold) classifier was used. */
+  mlClass: MLClass | null;
+  /** True when stage is sourced from the ONNX model, false when fallback. */
+  fromML: boolean;
 }
 
 const DEFAULT_READING: BehaviorReading = {
@@ -126,6 +132,8 @@ const DEFAULT_READING: BehaviorReading = {
   scrollCount10s: 0,
   longpressCount30s: 0,
   avgTouchDuration: 0,
+  mlClass: null,
+  fromML: false,
 };
 
 /** All values BehaviorContext exposes to child components */
@@ -142,6 +150,10 @@ interface BehaviorContextValue {
   activate: () => void;
   /** Stop IMU subscriptions (called when monitoring stops) */
   deactivate: () => void;
+  /** Whether the ONNX model has loaded successfully (false → using threshold fallback) */
+  mlReady: boolean;
+  /** Last ML load/inference error, if any */
+  mlError: string | null;
 }
 
 const BehaviorContext = createContext<BehaviorContextValue | null>(null);
@@ -199,6 +211,15 @@ export function BehaviorProvider({ children }: { children: React.ReactNode }) {
   const [behaviorStage, setBehaviorStage] = useState<BehaviorStage>("baseline");
   const [reading, setReading] = useState<BehaviorReading>(DEFAULT_READING);
   const [isActive, setIsActive] = useState(false);
+  const [mlReady, setMlReady] = useState(false);
+  const [mlError, setMlError] = useState<string | null>(null);
+
+  // Latest ML result (overrides threshold stage when present)
+  const mlResultRef = useRef<MLResult | null>(null);
+  // Monotonic token: increments on every activate/deactivate. Async ML init
+  // checks the token before calling start() to avoid reviving sensors after
+  // monitoring was already stopped.
+  const activationTokenRef = useRef(0);
 
   // ── Sliding-window buffers (refs — no re-render on each sensor tick) ──────
   const imuBufferRef = useRef<SensorSnapshot[]>([]);
@@ -351,13 +372,22 @@ export function BehaviorProvider({ children }: { children: React.ReactNode }) {
       deb.count = 1;
     }
 
-    const confirmedStage =
+    const confirmedThreshStage =
       deb.count >= THRESH.debounce ? deb.stage : behaviorStage;
+
+    // ── ML override ──────────────────────────────────────────────────────
+    // When the ONNX model has produced a recent prediction, it is the
+    // source of truth for stage + confidence. The threshold classifier
+    // still runs to keep the IMU display metrics fresh and to act as a
+    // fallback on web / before the model loads.
+    const ml = mlResultRef.current;
+    const confirmedStage: BehaviorStage = ml ? ml.stage : confirmedThreshStage;
+    const finalConfidence = ml ? ml.confidence : confidence;
 
     // ── Emit new state ────────────────────────────────────────────────────
     const newReading: BehaviorReading = {
       stage:            confirmedStage,
-      confidence,
+      confidence:       finalConfidence,
       accelVariance:    Math.round(accelVariance * 1000) / 1000,
       gyroVariance:     Math.round(gyroVariance * 1000) / 1000,
       pitchAngle:       Math.round(pitchDeg),
@@ -366,6 +396,8 @@ export function BehaviorProvider({ children }: { children: React.ReactNode }) {
       scrollCount10s:   recentScrolls10s,
       longpressCount30s: longpresses30s,
       avgTouchDuration: Math.round(avgTouchDuration),
+      mlClass:          ml?.mlClass ?? null,
+      fromML:           ml !== null,
     };
 
     if (confirmedStage !== behaviorStage) {
@@ -384,6 +416,33 @@ export function BehaviorProvider({ children }: { children: React.ReactNode }) {
     if (isActive) return;
     setIsActive(true);
     imuBufferRef.current = [];
+    mlResultRef.current = null;
+    activationTokenRef.current += 1;
+    const myToken = activationTokenRef.current;
+
+    // Kick off ML pipeline (load if needed, then start sensors @ 100Hz).
+    // Guarded with activation token so a late-arriving async start() cannot
+    // revive sensors after deactivate() was called.
+    void (async () => {
+      try {
+        if (!mlClassifier.ready) await mlClassifier.load();
+        if (myToken !== activationTokenRef.current) return;
+        setMlReady(mlClassifier.ready);
+        setMlError(mlClassifier.error);
+        if (mlClassifier.ready) {
+          await mlClassifier.start((result) => {
+            if (myToken !== activationTokenRef.current) return;
+            mlResultRef.current = result;
+          });
+          if (myToken !== activationTokenRef.current) {
+            try { mlClassifier.stop(); } catch { /* ignore */ }
+          }
+        }
+      } catch (e: any) {
+        if (myToken !== activationTokenRef.current) return;
+        setMlError(String(e?.message ?? e));
+      }
+    })();
 
     if (Platform.OS !== "web") {
       Accelerometer.setUpdateInterval(SENSOR_INTERVAL_MS);
@@ -429,6 +488,9 @@ export function BehaviorProvider({ children }: { children: React.ReactNode }) {
     imuBufferRef.current = [];
     touchBufferRef.current = [];
     stageCountRef.current = { stage: "baseline", count: 0 };
+    mlResultRef.current = null;
+    activationTokenRef.current += 1;
+    try { mlClassifier.stop(); } catch { /* ignore */ }
 
     accelSubRef.current?.remove();
     gyroSubRef.current?.remove();
@@ -455,6 +517,8 @@ export function BehaviorProvider({ children }: { children: React.ReactNode }) {
         isActive,
         activate,
         deactivate,
+        mlReady,
+        mlError,
       }}
     >
       {children}

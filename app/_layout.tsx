@@ -36,6 +36,7 @@ import { ErrorBoundary }     from "@/components/ErrorBoundary";
 import { BehaviorProvider }  from "@/context/BehaviorContext";
 import { DetectionProvider } from "@/context/DetectionContext";
 import { GISProvider }       from "@/context/GISContext";
+import { WatchingOverlay }   from "@/components/WatchingOverlay";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -74,6 +75,7 @@ export default function RootLayout() {
               <BehaviorProvider>
                 <DetectionProvider>
                   <RootLayoutNav />
+                  <WatchingOverlay />
                 </DetectionProvider>
               </BehaviorProvider>
             </GISProvider>
