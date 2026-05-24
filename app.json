@@ -19,11 +19,20 @@
       "infoPlist": {
         "NSMotionUsageDescription": "SmombieAlert uses motion sensors to detect if you are walking while distracted by your phone.",
         "NSLocationWhenInUseUsageDescription": "Location is used to detect crosswalks and accident zones near you.",
-        "UIBackgroundModes": ["location"]
+        "UIBackgroundModes": ["location"],
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": false,
+          "NSExceptionDomains": {
+            "kakao.com":          { "NSExceptionAllowsInsecureHTTPLoads": true, "NSIncludesSubdomains": true },
+            "t-data.seoul.go.kr": { "NSExceptionAllowsInsecureHTTPLoads": true },
+            "apis.data.go.kr":    { "NSExceptionAllowsInsecureHTTPLoads": true }
+          }
+        }
       }
     },
     "android": {
       "package": "com.smombiealert.app",
+      "usesCleartextTraffic": true,
       "permissions": [
         "android.permission.ACTIVITY_RECOGNITION",
         "android.permission.VIBRATE",
@@ -46,6 +55,12 @@
       "expo-font",
       "expo-web-browser",
       "expo-dev-client",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Used to check nearby crosswalks and pedestrian safety."
+        }
+      ],
       [
         "expo-brightness",
         {

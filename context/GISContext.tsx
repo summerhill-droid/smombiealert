@@ -17,11 +17,14 @@
  *              Heavy/moderate traffic road type       → traffic risk boost
  *              Steep slope from altitude change       → slope risk boost
  *
- * DATA SOURCE:
- *   OpenStreetMap Overpass API (overpass-api.de + two fallback mirrors)
- *   - No registration or API key needed
- *   - Queries crosswalks within 350 m, streetlamps within 80 m,
- *     road types within 80 m — all in a single batch request
+ * DATA SOURCES:
+ *   1. Seoul Official Dataset (서울특별시 횡단보도 현황, 2023-05-30)
+ *      39,036 crosswalks pre-loaded as a local asset — instant, offline, zero
+ *      network cost.  Used whenever the user is within Seoul's bounding box.
+ *   2. OpenStreetMap Overpass API (overpass-api.de + two fallback mirrors)
+ *      No registration or API key needed.  Supplies streetlamps and road type
+ *      for Seoul, and all three data types (crosswalks + lights + roads) for
+ *      locations outside Seoul.
  */
 
 import React, {
@@ -34,6 +37,7 @@ import React, {
 } from "react";
 import { Platform } from "react-native";
 import * as Location from "expo-location";
+import { isInSeoul, querySeoulCrosswalks } from "@/utils/seoulGIS";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -44,13 +48,26 @@ export interface LatLng {
 }
 
 /**
+ * Risk level of a crosswalk, inferred from OSM crossing tags.
+ *
+ *   "danger"  — uncontrolled or unmarked crossing: no traffic signals,
+ *               no pedestrian protections → highest pedestrian risk
+ *   "caution" — signalised or marked: some protection but still risky
+ *               when distracted
+ *   "low"     — footway / pedestrian zone: minimal vehicle conflict
+ */
+export type CrosswalkRisk = "danger" | "caution" | "low";
+
+/**
  * A crosswalk node returned by the Overpass API.
  * id = OpenStreetMap node ID (unique identifier)
+ * riskLevel = inferred danger level for map colour-coding
  */
 export interface Crosswalk {
   id: string;
   lat: number;
   lng: number;
+  riskLevel: CrosswalkRisk;
 }
 
 /**
@@ -80,6 +97,13 @@ export interface GISState {
   slope: number;
   /** Combined environment risk score 0–100 fed into the detection engine */
   gisRiskBoost: number;
+  /**
+   * Which dataset crosswalks came from:
+   *   "seoul"   — official Seoul City dataset (local, offline, fastest)
+   *   "osm"     — OpenStreetMap Overpass API (live, global)
+   *   "none"    — no data yet
+   */
+  dataSource: "seoul" | "osm" | "none";
   permissionStatus: PermissionStatus;
   isLoadingGIS: boolean;
   gisError: string | null;
@@ -159,15 +183,49 @@ const OVERPASS_MIRRORS = [
 ];
 
 /**
- * queryOverpass — Fetches crosswalk, streetlight, and road data from OSM.
+ * Infers the pedestrian danger level of a crosswalk from its OSM tags.
+ *
+ * OSM `crossing` tag values and their real-world meanings:
+ *   traffic_signals / pelican / toucan → protected by signals → "caution"
+ *   marked / zebra / raised / island   → physically marked   → "caution"
+ *   uncontrolled                        → no protection       → "danger"
+ *   unmarked                            → not even painted    → "danger"
+ *   (missing / unknown)                 → assume uncontrolled → "danger"
+ *
+ * Also reads `crossing:signals=yes` and `crossing:island=yes` as fallbacks.
+ */
+function inferCrosswalkRisk(tags: Record<string, string> | undefined): CrosswalkRisk {
+  if (!tags) return "danger";
+  const ct = tags["crossing"] ?? tags["crossing:type"] ?? "";
+  const hasSignals =
+    ct === "traffic_signals" ||
+    ct === "pelican" ||
+    ct === "toucan" ||
+    ct === "pegasus" ||
+    tags["crossing:signals"] === "yes";
+  const isMarked =
+    ct === "marked" ||
+    ct === "zebra" ||
+    ct === "raised" ||
+    ct === "island" ||
+    tags["crossing:island"] === "yes";
+  if (hasSignals || isMarked) return "caution";
+  if (ct === "uncontrolled" || ct === "unmarked") return "danger";
+  // No crossing tag at all → unprotected, treat as danger
+  return "danger";
+}
+
+/**
+ * queryOverpass — Fetches crosswalk, accident area, streetlight, and road data.
  *
  * Query breakdown:
- *   node["highway"="crossing"](around:350,...) — crosswalks within 350 m
+ *   node["highway"="crossing"](around:350,...) — all crosswalks within 350 m
+ *                                                (includes crossing tags for risk)
  *   node["highway"="street_lamp"](around:80,...) — streetlights within 80 m
  *   way["highway"](around:80,...)               — road segments within 80 m
  *
- * Uses `out body` (not `out body geom`) to keep response size small and
- * avoid timeouts. Node elements include lat/lon; way elements include tags.
+ * Uses `out body` (not `out body geom`) to keep response size small.
+ * Node elements include lat/lon AND all tags (for risk classification).
  *
  * Tries each mirror in sequence; throws only when all three fail.
  */
@@ -175,8 +233,9 @@ async function queryOverpass(
   lat: number,
   lng: number
 ): Promise<{ crosswalks: Crosswalk[]; streetlightCount: number; trafficLevel: TrafficLevel }> {
+  // timeout:15 gives mirrors more breathing room; AbortSignal is 16s
   const query = `
-[out:json][timeout:10];
+[out:json][timeout:15];
 (
   node["highway"="crossing"](around:350,${lat},${lng});
   node["highway"="street_lamp"](around:80,${lat},${lng});
@@ -189,11 +248,28 @@ out body;
 
   for (const mirror of OVERPASS_MIRRORS) {
     try {
-      const res = await fetch(
-        mirror + "?data=" + encodeURIComponent(query),
-        { signal: AbortSignal.timeout(11_000) }  // 11s > query timeout=10s
-      );
-      if (!res.ok) throw new Error("HTTP " + res.status);
+      // AbortSignal.timeout() is NOT supported in React Native's Hermes engine.
+      // Instead we use Promise.race with a manual timeout that rejects after
+      // 16 seconds.  The AbortController lets us also cancel the fetch so we
+      // don't leave dangling connections.
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 16_000);
+
+      let res: Response;
+      try {
+        res = await Promise.race([
+          fetch(mirror + "?data=" + encodeURIComponent(query), {
+            signal: controller.signal,
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error(`Timeout: ${mirror}`)), 16_000)
+          ),
+        ]);
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
+      if (!res.ok) throw new Error(`HTTP ${res.status} from ${mirror}`);
       const json = await res.json();
 
       const crosswalks: Crosswalk[] = [];
@@ -204,15 +280,15 @@ out body;
         if (el.type === "node") {
           const hw = el.tags?.["highway"];
           if (hw === "crossing") {
-            // Each crossing node becomes a Crosswalk entry
-            crosswalks.push({ id: String(el.id), lat: el.lat, lng: el.lon });
+            // Classify each crossing by its OSM tags
+            const risk = inferCrosswalkRisk(el.tags);
+            crosswalks.push({ id: String(el.id), lat: el.lat, lng: el.lon, riskLevel: risk });
           } else if (hw === "street_lamp") {
-            streetlightCount += 1;  // Count lamps within 80 m
+            streetlightCount += 1;
           }
         } else if (el.type === "way") {
           const hw = el.tags?.["highway"] as string | undefined;
           if (hw) {
-            // Keep only the "worst" (most dangerous) road type found nearby
             const lvl = TRAFFIC_MAP[hw] ?? "light";
             if (trafficRank(lvl) > trafficRank(bestTraffic)) bestTraffic = lvl;
           }
@@ -222,7 +298,7 @@ out body;
       return { crosswalks, streetlightCount, trafficLevel: bestTraffic };
     } catch (e) {
       lastError = e as Error;
-      // Try the next mirror
+      // Continue to next mirror
     }
   }
 
@@ -252,21 +328,34 @@ export function GISProvider({ children }: { children: React.ReactNode }) {
   const [trafficLevel, setTrafficLevel] = useState<TrafficLevel>("none");
   const [slope, setSlope] = useState(0);
   const [gisRiskBoost, setGisRiskBoost] = useState(0);
+  const [dataSource, setDataSource] = useState<GISState["dataSource"]>("none");
   const [permissionStatus, setPermissionStatus] = useState<PermissionStatus>("unknown");
   const [isLoadingGIS, setIsLoadingGIS] = useState(false);
   const [gisError, setGisError] = useState<string | null>(null);
 
   // ── Refs (survive re-renders without causing them) ────────────────────────
-  /** Last position where we ran a full Overpass query — re-fetch after 100 m */
+  /** Last position where we ran a full Overpass query — re-fetch after 50 m */
   const lastFetchLocRef = useRef<LatLng | null>(null);
+  /** Timestamp (ms) of the last successful Overpass fetch — re-fetch after 2 min */
+  const lastFetchTimeRef = useRef<number>(0);
   /** Sliding window of recent altitude+distance pairs — used to compute slope */
   const altitudeHistoryRef = useRef<Array<{ alt: number; dist: number }>>([]);
   /** Reference to the active Location.watchPositionAsync subscription */
   const locationSubRef = useRef<Location.LocationSubscription | null>(null);
+  /** Periodic refresh timer handle (2-minute interval) */
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   /** Prevents two simultaneous Overpass fetches (e.g. on rapid GPS updates) */
   const isFetchingRef = useRef(false);
   /** Becomes true after the first successful Overpass response */
   const gisLoadedRef = useRef(false);
+  /** Stores the latest GPS location in a ref so the timer can read it */
+  const userLocationRef = useRef<GISState["userLocation"]>(null);
+  /**
+   * slopeRef — mirrors the slope state value for use inside fetchGIS.
+   * This BREAKS the fetchGIS → slope dependency so that slope changes do NOT
+   * recreate fetchGIS (and thus do NOT restart the GPS location watcher).
+   */
+  const slopeRef = useRef(0);
 
   // ── Slope calculation ──────────────────────────────────────────────────────
   /**
@@ -337,11 +426,76 @@ export function GISProvider({ children }: { children: React.ReactNode }) {
     return Math.min(boost, 100);  // Cap at 100
   }
 
-  // ── Overpass fetch ─────────────────────────────────────────────────────────
+  // ── Overpass fetch (lights + roads only) ────────────────────────────────────
   /**
-   * fetchGIS — runs the Overpass query for a given position and updates state.
+   * queryOverpassLightsRoads — a slimmed-down Overpass query that skips
+   * crosswalks entirely (we already have them from the Seoul dataset).
+   * Only fetches streetlamps and road types within 80 m.
+   * Used in the Seoul code path to supplement the local crosswalk data.
+   */
+  async function queryOverpassLightsRoads(
+    lat: number,
+    lng: number
+  ): Promise<{ streetlightCount: number; trafficLevel: TrafficLevel }> {
+    const query = `
+[out:json][timeout:10];
+(
+  node["highway"="street_lamp"](around:80,${lat},${lng});
+  way["highway"](around:80,${lat},${lng});
+);
+out body;
+    `.trim();
+
+    let lastError: Error | null = null;
+    for (const mirror of OVERPASS_MIRRORS) {
+      try {
+        const controller = new AbortController();
+        const tid = setTimeout(() => controller.abort(), 12_000);
+        let res: Response;
+        try {
+          res = await Promise.race([
+            fetch(mirror + "?data=" + encodeURIComponent(query), { signal: controller.signal }),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error(`Timeout: ${mirror}`)), 12_000)
+            ),
+          ]);
+        } finally {
+          clearTimeout(tid);
+        }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        let lights = 0;
+        let bestTraffic: TrafficLevel = "none";
+        for (const el of json.elements ?? []) {
+          if (el.type === "node" && el.tags?.["highway"] === "street_lamp") lights += 1;
+          if (el.type === "way" && el.tags?.["highway"]) {
+            const lvl = TRAFFIC_MAP[el.tags["highway"] as string] ?? "light";
+            if (trafficRank(lvl) > trafficRank(bestTraffic)) bestTraffic = lvl;
+          }
+        }
+        return { streetlightCount: lights, trafficLevel: bestTraffic };
+      } catch (e) {
+        lastError = e as Error;
+      }
+    }
+    throw lastError ?? new Error("All mirrors failed");
+  }
+
+  // ── Primary GIS fetch ──────────────────────────────────────────────────────
+  /**
+   * fetchGIS — dual-source GIS update for a given GPS position.
+   *
+   * SEOUL PATH (user within Seoul bounding box):
+   *   1. Query Seoul City dataset instantly from local JSON → crosswalks
+   *   2. Run slimmed Overpass query → streetlights + road type
+   *   3. dataSource = "seoul"
+   *
+   * GLOBAL PATH (outside Seoul):
+   *   1. Run full Overpass query → crosswalks + streetlights + road type
+   *   2. dataSource = "osm"
+   *
+   * Both paths feed the same computeBoost() and update the same state.
    * Guarded by isFetchingRef so only one request runs at a time.
-   * After success, immediately recomputes the risk boost with fresh data.
    */
   const fetchGIS = useCallback(async (lat: number, lng: number) => {
     if (isFetchingRef.current) return;
@@ -349,44 +503,86 @@ export function GISProvider({ children }: { children: React.ReactNode }) {
     setIsLoadingGIS(true);
     setGisError(null);
 
-    try {
-      const { crosswalks, streetlightCount: lights, trafficLevel: traffic } =
-        await queryOverpass(lat, lng);
+    const here: LatLng = { lat, lng };
 
-      // Find the nearest crosswalk using Haversine
-      const here: LatLng = { lat, lng };
+    try {
+      let crosswalks: Crosswalk[];
+      let lights: number;
+      let traffic: TrafficLevel;
+
+      if (isInSeoul(lat, lng)) {
+        // ── Seoul path ────────────────────────────────────────────────────────
+        // 1. Try local Seoul JSON first (instant, offline)
+        crosswalks = querySeoulCrosswalks(lat, lng, 350);
+
+        if (crosswalks.length === 0) {
+          // Seoul JSON didn't load (bundling issue) — fall back to full Overpass
+          try {
+            const overpassResult = await queryOverpass(lat, lng);
+            crosswalks = overpassResult.crosswalks;
+            lights    = overpassResult.streetlightCount;
+            traffic   = overpassResult.trafficLevel;
+          } catch {
+            crosswalks = [];
+            lights     = 3;
+            traffic    = "moderate";
+          }
+          setDataSource("osm");
+        } else {
+          // Seoul JSON loaded fine; get lights+roads from Overpass silently
+          try {
+            const overpassResult = await queryOverpassLightsRoads(lat, lng);
+            lights  = overpassResult.streetlightCount;
+            traffic = overpassResult.trafficLevel;
+          } catch {
+            // Secondary data unavailable — use neutral defaults, no error shown
+            lights  = 3;
+            traffic = "moderate";
+          }
+          setDataSource("seoul");
+        }
+      } else {
+        // ── Global path: full Overpass for everything ─────────────────────────
+        const overpassResult = await queryOverpass(lat, lng);
+        crosswalks = overpassResult.crosswalks;
+        lights = overpassResult.streetlightCount;
+        traffic = overpassResult.trafficLevel;
+        setDataSource("osm");
+      }
+
+      // Find nearest crosswalk
       let nearestDist: number | null = null;
       for (const cw of crosswalks) {
         const d = haversine(here, { lat: cw.lat, lng: cw.lng });
         if (nearestDist === null || d < nearestDist) nearestDist = d;
       }
 
-      // Persist results in state
+      // Commit to state
       setNearbyCrosswalks(crosswalks);
       setNearestCrosswalkDist(nearestDist !== null ? Math.round(nearestDist) : null);
       setStreetlightCount(lights);
       setTrafficLevel(traffic);
-      lastFetchLocRef.current = here;   // Mark fetch location for 100 m threshold
-      gisLoadedRef.current = true;       // Unlock boost computation
+      lastFetchLocRef.current = here;
+      lastFetchTimeRef.current = Date.now();
+      gisLoadedRef.current = true;
 
-      // Immediately recalculate risk boost with the fresh data
       setGisRiskBoost(
         computeBoost(
           nearestDist !== null ? Math.round(nearestDist) : null,
           lights,
           traffic,
-          slope,
+          slopeRef.current,   // ← ref instead of state: no slope dependency
           true
         )
       );
     } catch {
-      // All mirrors failed — degrade gracefully, keep old data if any
-      setGisError("GIS data unavailable — sensors only");
+      setGisError("GIS unavailable — sensors only");
     } finally {
       setIsLoadingGIS(false);
       isFetchingRef.current = false;
     }
-  }, [slope]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);  // ← stable: fetchGIS never changes, location watcher is never restarted
 
   // ── Immediate location on startup ──────────────────────────────────────────
   /**
@@ -422,9 +618,9 @@ export function GISProvider({ children }: { children: React.ReactNode }) {
    *
    * On each update:
    *   1. Computes slope from altitude delta
-   *   2. Updates userLocation state
-   *   3. If moved >100 m from last Overpass fetch, re-queries OSM data
-   *      (100 m threshold = crosswalk data stays valid for ~100 m of walking)
+   *   2. Updates userLocation state and userLocationRef (for timer reads)
+   *   3. If moved >50 m from last Overpass fetch OR >2 min have elapsed,
+   *      re-queries OSM data
    */
   const startLocationWatch = useCallback(async () => {
     if (Platform.OS === "web") return;
@@ -445,23 +641,42 @@ export function GISProvider({ children }: { children: React.ReactNode }) {
         const distFromPrev = prevLoc ? haversine(prevLoc, { lat, lng }) : 0;
 
         updateSlope(altitude, distFromPrev);
-        setUserLocation({ lat, lng, altitude, heading: heading ?? null });
+        const locObj = { lat, lng, altitude, heading: heading ?? null };
+        setUserLocation(locObj);
+        userLocationRef.current = locObj;
         prevLoc = { lat, lng, altitude };
 
-        // Re-fetch Overpass data when user has walked >100 m since last query
+        // Re-fetch if moved >50 m OR >2 minutes since last fetch
         const lastFetch = lastFetchLocRef.current;
         const moveDist = lastFetch ? haversine(lastFetch, { lat, lng }) : Infinity;
-        if (moveDist > 100) {
+        const timeSince = Date.now() - lastFetchTimeRef.current;
+        if (moveDist > 50 || timeSince > 120_000) {
           fetchGIS(lat, lng);
         }
       }
     );
+
+    // Periodic timer: re-fetch every 2 minutes even if user is stationary.
+    // Useful for testing in one location and for bus/tram passengers.
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      const loc = userLocationRef.current;
+      if (!loc || isFetchingRef.current) return;
+      const timeSince = Date.now() - lastFetchTimeRef.current;
+      if (timeSince > 119_000) { // ≈ 2 min
+        fetchGIS(loc.lat, loc.lng);
+      }
+    }, 30_000); // Check every 30 s, fetch only when 2 min window passes
   }, [fetchGIS, fetchInitialLocation]);
 
-  /** Removes the location subscription (called when component unmounts) */
+  /** Removes the location subscription and periodic timer (called on unmount) */
   const stopLocationWatch = useCallback(() => {
     locationSubRef.current?.remove();
     locationSubRef.current = null;
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
   }, []);
 
   // ── Permission flow ────────────────────────────────────────────────────────
@@ -505,23 +720,27 @@ export function GISProvider({ children }: { children: React.ReactNode }) {
 
   // ── Slope-only boost update ────────────────────────────────────────────────
   /**
-   * When slope changes (GPS altitude delta), recalculate the boost.
-   * Other factors are recalculated directly inside fetchGIS after a new query.
-   * We only need this effect for slope since slope changes without a new fetch.
+   * When slope changes, keep slopeRef in sync and recalculate the boost.
+   * slopeRef lets fetchGIS read the latest slope WITHOUT depending on the
+   * slope state variable — breaking the slope → fetchGIS → startLocationWatch
+   * → useEffect cascade that was restarting the GPS watcher on every step.
    */
   useEffect(() => {
+    slopeRef.current = slope;
     if (gisLoadedRef.current) {
       setGisRiskBoost(
         computeBoost(nearestCrosswalkDist, streetlightCount, trafficLevel, slope, true)
       );
     }
-  }, [slope]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slope, nearestCrosswalkDist, streetlightCount, trafficLevel]);
 
   // ── Manual refresh ─────────────────────────────────────────────────────────
   /** Called from the refresh button in GISInfoCard and NativeMapView. */
   const refreshGIS = useCallback(() => {
     if (userLocation) {
-      lastFetchLocRef.current = null;  // Reset threshold — forces re-fetch
+      lastFetchLocRef.current = null;   // Reset distance threshold
+      lastFetchTimeRef.current = 0;     // Reset time threshold
       fetchGIS(userLocation.lat, userLocation.lng);
     }
   }, [userLocation, fetchGIS]);
@@ -536,6 +755,7 @@ export function GISProvider({ children }: { children: React.ReactNode }) {
         trafficLevel,
         slope,
         gisRiskBoost,
+        dataSource,
         permissionStatus,
         isLoadingGIS,
         gisError,

@@ -61,6 +61,6 @@
     "expo-keep-awake": "^55.0.8",
     "expo-sensors": "^15.0.8",
     "onnxruntime-react-native": "^1.24.3",
-    "react-native-maps": "1.18.0"
+    "react-native-webview": "13.15.0"
   }
 }

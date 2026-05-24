@@ -23,6 +23,7 @@ import { useColors }         from "@/hooks/useColors";
 import { AlertRing }         from "@/components/AlertRing";
 import { StatusIcon }        from "@/components/StatusIcon";
 import { GISInfoCard }       from "@/components/GISInfoCard";
+import { SignalCard }        from "@/components/SignalCard";
 import { BehaviorStageCard } from "@/components/BehaviorStageCard";
 
 export default function HomeScreen() {
@@ -50,6 +51,7 @@ export default function HomeScreen() {
     trafficLevel,
     slope,
     gisRiskBoost,
+    dataSource,
     isLoadingGIS,
     gisError,
     permissionStatus,
@@ -207,6 +209,9 @@ export default function HomeScreen() {
           alertLevel={alertLevel}
         />
 
+        {/* ── Live Pedestrian Signal (Seoul V2X) ────────────────────────── */}
+        <SignalCard isMonitoring={isMonitoring} />
+
         {/* ── GIS Risk Factors ──────────────────────────────────────────── */}
         <View style={{ marginBottom: 16 }}>
           <GISInfoCard
@@ -215,6 +220,7 @@ export default function HomeScreen() {
             trafficLevel={trafficLevel}
             slope={slope}
             gisRiskBoost={gisRiskBoost}
+            dataSource={dataSource}
             isLoading={isLoadingGIS}
             error={gisError}
             onRefresh={refreshGIS}
