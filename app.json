@@ -19,15 +19,27 @@
       "infoPlist": {
         "NSMotionUsageDescription": "SmombieAlert uses motion sensors to detect if you are walking while distracted by your phone.",
         "NSLocationWhenInUseUsageDescription": "Location is used to detect crosswalks and accident zones near you.",
-        "UIBackgroundModes": ["location"],
+        "UIBackgroundModes": [
+          "location",
+          "location",
+          "location"
+        ],
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": false,
           "NSExceptionDomains": {
-            "kakao.com":          { "NSExceptionAllowsInsecureHTTPLoads": true, "NSIncludesSubdomains": true },
-            "t-data.seoul.go.kr": { "NSExceptionAllowsInsecureHTTPLoads": true },
-            "apis.data.go.kr":    { "NSExceptionAllowsInsecureHTTPLoads": true }
+            "kakao.com": {
+              "NSExceptionAllowsInsecureHTTPLoads": true,
+              "NSIncludesSubdomains": true
+            },
+            "t-data.seoul.go.kr": {
+              "NSExceptionAllowsInsecureHTTPLoads": true
+            },
+            "apis.data.go.kr": {
+              "NSExceptionAllowsInsecureHTTPLoads": true
+            }
           }
-        }
+        },
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -39,7 +51,15 @@
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.HIGH_SAMPLING_RATE_SENSORS",
-        "android.permission.WAKE_LOCK"
+        "android.permission.WAKE_LOCK",
+        "android.permission.WRITE_SETTINGS",
+        "android.permission.ACTIVITY_RECOGNITION",
+        "android.permission.VIBRATE",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.HIGH_SAMPLING_RATE_SENSORS",
+        "android.permission.WAKE_LOCK",
+        "android.permission.WRITE_SETTINGS"
       ]
     },
     "web": {
@@ -71,6 +91,18 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "d8e21629-6eaa-4975-b479-b60996da39e3"
+      }
+    },
+    "owner": "summerhill",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/d8e21629-6eaa-4975-b479-b60996da39e3"
     }
   }
 }
