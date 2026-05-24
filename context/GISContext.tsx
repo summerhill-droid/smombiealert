@@ -37,7 +37,7 @@ import React, {
 } from "react";
 import { Platform } from "react-native";
 import * as Location from "expo-location";
-import { isInSeoul, querySeoulCrosswalks } from "@/utils/seoulGIS";
+import { isInSeoul, querySeoulCrosswalks, querySeoulStreetlightCount } from "@/utils/seoulGIS";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -515,29 +515,43 @@ out body;
         // 1. Try local Seoul JSON first (instant, offline)
         crosswalks = querySeoulCrosswalks(lat, lng, 350);
 
+        // 1b. Streetlights — prefer official Seoul streetlight dataset
+        const seoulLights = querySeoulStreetlightCount(lat, lng, 80);
+
         if (crosswalks.length === 0) {
-          // Seoul JSON didn't load (bundling issue) — fall back to full Overpass
+          // Seoul crosswalk JSON didn't load — fall back to full Overpass
           try {
             const overpassResult = await queryOverpass(lat, lng);
             crosswalks = overpassResult.crosswalks;
-            lights    = overpassResult.streetlightCount;
+            lights    = seoulLights ?? overpassResult.streetlightCount;
             traffic   = overpassResult.trafficLevel;
           } catch {
             crosswalks = [];
-            lights     = 3;
+            lights     = seoulLights ?? 3;
             traffic    = "moderate";
           }
           setDataSource("osm");
         } else {
-          // Seoul JSON loaded fine; get lights+roads from Overpass silently
-          try {
-            const overpassResult = await queryOverpassLightsRoads(lat, lng);
-            lights  = overpassResult.streetlightCount;
-            traffic = overpassResult.trafficLevel;
-          } catch {
-            // Secondary data unavailable — use neutral defaults, no error shown
-            lights  = 3;
-            traffic = "moderate";
+          // Seoul crosswalk JSON loaded fine
+          if (seoulLights !== null) {
+            // Both Seoul datasets available — only need road type from Overpass
+            try {
+              const overpassResult = await queryOverpassLightsRoads(lat, lng);
+              traffic = overpassResult.trafficLevel;
+            } catch {
+              traffic = "moderate";
+            }
+            lights = seoulLights;
+          } else {
+            // Seoul streetlight JSON missing — get both from Overpass
+            try {
+              const overpassResult = await queryOverpassLightsRoads(lat, lng);
+              lights  = overpassResult.streetlightCount;
+              traffic = overpassResult.trafficLevel;
+            } catch {
+              lights  = 3;
+              traffic = "moderate";
+            }
           }
           setDataSource("seoul");
         }

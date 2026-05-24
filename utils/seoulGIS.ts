@@ -161,3 +161,87 @@ export function getSeoulGISStatus(): string {
 export const SEOUL_CROSSWALK_COUNT = {
   get value() { return _totalCount; },
 };
+
+// ─── Streetlights (서울시 가로등 위치 정보) ───────────────────────────────────
+//
+// Same lazy-grid pattern as crosswalks. JSON shape: { meta, data: [[lat,lng], ...] }
+// querySeoulStreetlightCount(lat, lng, radiusM) returns the COUNT of streetlights
+// within radiusM metres — matches the Overpass `count(node[highway=street_lamp])`
+// semantic that drives the "darkness risk" boost in GISContext.
+
+type LightCell = { lat: number; lng: number }[];
+let _lightGrid: Map<string, LightCell> | null = null;
+let _lightTotalCount = 0;
+let _lightLoadError: string | null = null;
+
+function buildLightGrid(): Map<string, LightCell> {
+  if (_lightGrid !== null) return _lightGrid;
+  const g = new Map<string, LightCell>();
+
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const raw = require("../assets/seoul_streetlights.json");
+    if (!raw || !Array.isArray(raw.data)) {
+      _lightLoadError = `seoulGIS: invalid streetlight JSON shape`;
+      console.error(_lightLoadError);
+      _lightGrid = g;
+      return g;
+    }
+
+    for (const row of raw.data) {
+      if (!Array.isArray(row) || row.length < 2) continue;
+      const [lat, lng] = row as [number, number];
+      if (typeof lat !== "number" || typeof lng !== "number") continue;
+      const key = cellKey(lat, lng);
+      let cell = g.get(key);
+      if (!cell) { cell = []; g.set(key, cell); }
+      cell.push({ lat, lng });
+      _lightTotalCount++;
+    }
+
+    console.log(`[seoulGIS] Streetlight grid built: ${_lightTotalCount} lights, ${g.size} cells`);
+  } catch (e) {
+    _lightLoadError = `seoulGIS: failed to load streetlight JSON — ${String(e)}`;
+    console.warn(_lightLoadError);
+  }
+
+  _lightGrid = g;
+  return g;
+}
+
+/**
+ * querySeoulStreetlightCount — number of Seoul streetlights within `radiusM`
+ * metres of (lat, lng). Returns null if the dataset isn't available (caller
+ * should fall back to Overpass). Returns 0 (a real count) when the dataset is
+ * loaded but no lights are nearby.
+ */
+export function querySeoulStreetlightCount(
+  lat: number,
+  lng: number,
+  radiusM = 80,
+): number | null {
+  const grid = buildLightGrid();
+  if (grid.size === 0) return null;
+
+  const cellSpan =
+    Math.ceil(radiusM / (GRID_DEG * EARTH_R * (Math.PI / 180))) + 1;
+  const baseLat = Math.floor(lat / GRID_DEG);
+  const baseLng = Math.floor(lng / GRID_DEG);
+
+  let count = 0;
+  for (let dLat = -cellSpan; dLat <= cellSpan; dLat++) {
+    for (let dLng = -cellSpan; dLng <= cellSpan; dLng++) {
+      const key = `${baseLat + dLat}_${baseLng + dLng}`;
+      const cell = grid.get(key);
+      if (!cell) continue;
+      for (const entry of cell) {
+        if (haversineM(lat, lng, entry.lat, entry.lng) <= radiusM) count++;
+      }
+    }
+  }
+  return count;
+}
+
+export const SEOUL_STREETLIGHT_COUNT = {
+  get value() { return _lightTotalCount; },
+};
