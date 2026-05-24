@@ -68,6 +68,18 @@ export interface Crosswalk {
   lat: number;
   lng: number;
   riskLevel: CrosswalkRisk;
+  /**
+   * Seoul-only pedestrian-safety features (from 서울특별시 자치구 횡단보도 정보).
+   * Undefined for OSM-sourced crosswalks.
+   *   hasSignal           — 보행등 설치 (pedestrian walk light)
+   *   hasPedestrianButton — 보행자작동신호기 (push-to-cross button)
+   *   isRaised            — 고원식 횡단보도 (raised platform / traffic calming)
+   */
+  features?: {
+    hasSignal: boolean;
+    hasPedestrianButton: boolean;
+    isRaised: boolean;
+  };
 }
 
 /**
@@ -89,6 +101,8 @@ export interface GISState {
   nearbyCrosswalks: Crosswalk[];
   /** Distance in metres to the nearest crosswalk (null = none found) */
   nearestCrosswalkDist: number | null;
+  /** The nearest crosswalk node itself (null = none found). Carries Seoul-only feature flags. */
+  nearestCrosswalk: Crosswalk | null;
   /** Number of streetlamp nodes found within 80 m */
   streetlightCount: number;
   /** Highest traffic level among all roads found within 80 m */
@@ -324,6 +338,7 @@ export function GISProvider({ children }: { children: React.ReactNode }) {
   const [userLocation, setUserLocation] = useState<GISState["userLocation"]>(null);
   const [nearbyCrosswalks, setNearbyCrosswalks] = useState<Crosswalk[]>([]);
   const [nearestCrosswalkDist, setNearestCrosswalkDist] = useState<number | null>(null);
+  const [nearestCrosswalk, setNearestCrosswalk] = useState<Crosswalk | null>(null);
   const [streetlightCount, setStreetlightCount] = useState(0);
   const [trafficLevel, setTrafficLevel] = useState<TrafficLevel>("none");
   const [slope, setSlope] = useState(0);
@@ -398,6 +413,7 @@ export function GISProvider({ children }: { children: React.ReactNode }) {
    */
   function computeBoost(
     nearestDist: number | null,
+    nearestCw: Crosswalk | null,
     lights: number,
     traffic: TrafficLevel,
     slopePct: number,
@@ -412,6 +428,19 @@ export function GISProvider({ children }: { children: React.ReactNode }) {
       else if (nearestDist < 50) boost += 25;
       else if (nearestDist < 150) boost += 15;
       else if (nearestDist < 300) boost += 5;
+
+      // ── Seoul-only feature-aware safety adjustments ─────────────────────
+      // Applied only when within 50 m (entering/at the crosswalk) and we
+      // actually have feature flags from the Seoul dataset.
+      const feats = nearestCw?.features;
+      if (feats && nearestDist < 50) {
+        // 보행등 없음 + 작동신호기도 없음 → uncontrolled crossing, +10
+        if (!feats.hasSignal && !feats.hasPedestrianButton) boost += 10;
+        // 고원식 횡단보도 (raised platform = traffic calming) → −5 (safer)
+        if (feats.isRaised) boost -= 5;
+        // 보행등 설치됨 → −3 (some protection)
+        if (feats.hasSignal) boost -= 3;
+      }
     }
     if (lights === 0) boost += 20;
     else if (lights < 3) boost += 10;
@@ -564,16 +593,21 @@ out body;
         setDataSource("osm");
       }
 
-      // Find nearest crosswalk
+      // Find nearest crosswalk (and its risk class)
       let nearestDist: number | null = null;
+      let nearestCw: Crosswalk | null = null;
       for (const cw of crosswalks) {
         const d = haversine(here, { lat: cw.lat, lng: cw.lng });
-        if (nearestDist === null || d < nearestDist) nearestDist = d;
+        if (nearestDist === null || d < nearestDist) {
+          nearestDist = d;
+          nearestCw   = cw;
+        }
       }
 
       // Commit to state
       setNearbyCrosswalks(crosswalks);
       setNearestCrosswalkDist(nearestDist !== null ? Math.round(nearestDist) : null);
+      setNearestCrosswalk(nearestCw);
       setStreetlightCount(lights);
       setTrafficLevel(traffic);
       lastFetchLocRef.current = here;
@@ -583,6 +617,7 @@ out body;
       setGisRiskBoost(
         computeBoost(
           nearestDist !== null ? Math.round(nearestDist) : null,
+          nearestCw,
           lights,
           traffic,
           slopeRef.current,   // ← ref instead of state: no slope dependency
@@ -743,7 +778,7 @@ out body;
     slopeRef.current = slope;
     if (gisLoadedRef.current) {
       setGisRiskBoost(
-        computeBoost(nearestCrosswalkDist, streetlightCount, trafficLevel, slope, true)
+        computeBoost(nearestCrosswalkDist, nearestCrosswalk, streetlightCount, trafficLevel, slope, true)
       );
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -765,6 +800,7 @@ out body;
         userLocation,
         nearbyCrosswalks,
         nearestCrosswalkDist,
+        nearestCrosswalk,
         streetlightCount,
         trafficLevel,
         slope,

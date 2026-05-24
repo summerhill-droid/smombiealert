@@ -17,7 +17,7 @@
  * []. GISContext detects this and silently falls back to the Overpass API.
  */
 
-import type { Crosswalk } from "@/context/GISContext";
+import type { Crosswalk, CrosswalkRisk } from "@/context/GISContext";
 
 // ─── Seoul bounding box (with 2 km margin) ────────────────────────────────────
 const SEOUL_BOUNDS = {
@@ -42,8 +42,17 @@ export function isInSeoul(lat: number, lng: number): boolean {
 const GRID_DEG = 0.003;
 const EARTH_R  = 6_371_000;
 
-type GridEntry = { lat: number; lng: number; danger: boolean };
+type GridEntry = {
+  lat: number;
+  lng: number;
+  risk: CrosswalkRisk;
+  hasSignal: boolean;             // 보행등 (sgn_yn)
+  hasPedestrianButton: boolean;   // 보행자작동신호기 (pdsn_sgn_yn)
+  isRaised: boolean;              // 고원식 (high_knd_yn)
+};
 type GridCell  = GridEntry[];
+
+const RISK_LEVELS: CrosswalkRisk[] = ["low", "caution", "danger"];
 
 let _grid: Map<string, GridCell> | null = null;
 let _totalCount = 0;
@@ -85,12 +94,26 @@ function buildGrid(): Map<string, GridCell> {
 
     for (const row of raw.data) {
       if (!Array.isArray(row) || row.length < 3) continue;
-      const [lat, lng, flag] = row as [number, number, number];
+      const [lat, lng, encoded] = row as [number, number, number];
       if (typeof lat !== "number" || typeof lng !== "number") continue;
+
+      // New format (서울특별시 자치구 횡단보도 정보):
+      //   bits 0-2 = feature flags (sgn, pdsn, high)
+      //   bits 3-4 = risk level (0=low, 1=caution, 2=danger)
+      // Legacy fallback: a bare 0/1 dangerFlag stored where risk bits sit at 0.
+      const hasSignal           = (encoded & 0b001) !== 0;
+      const hasPedestrianButton = (encoded & 0b010) !== 0;
+      const isRaised            = (encoded & 0b100) !== 0;
+      const riskIdx             = (encoded >> 3) & 0b11;
+      const risk: CrosswalkRisk =
+        RISK_LEVELS[riskIdx] ??
+        // Legacy: dangerFlag=1 → danger, dangerFlag=0 → caution
+        (encoded === 1 ? "danger" : "caution");
+
       const key = cellKey(lat, lng);
       let cell = g.get(key);
       if (!cell) { cell = []; g.set(key, cell); }
-      cell.push({ lat, lng, danger: flag === 1 });
+      cell.push({ lat, lng, risk, hasSignal, hasPedestrianButton, isRaised });
       _totalCount++;
     }
 
@@ -141,7 +164,12 @@ export function querySeoulCrosswalks(
             id: `seoul_${entry.lat.toFixed(6)}_${entry.lng.toFixed(6)}`,
             lat: entry.lat,
             lng: entry.lng,
-            riskLevel: entry.danger ? "danger" : "caution",
+            riskLevel: entry.risk,
+            features: {
+              hasSignal: entry.hasSignal,
+              hasPedestrianButton: entry.hasPedestrianButton,
+              isRaised: entry.isRaised,
+            },
           });
         }
       }
