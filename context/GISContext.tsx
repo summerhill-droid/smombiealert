@@ -642,7 +642,6 @@ out body;
    * opening the app, not after the user has walked 10 m.
    */
   const fetchInitialLocation = useCallback(async () => {
-    if (Platform.OS === "web") return;  // Location API not available in web build
     try {
       const loc = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
@@ -672,7 +671,6 @@ out body;
    *      re-queries OSM data
    */
   const startLocationWatch = useCallback(async () => {
-    if (Platform.OS === "web") return;
     if (locationSubRef.current) return;  // Already watching
 
     fetchInitialLocation();  // Get first fix immediately (don't wait for watcher)
@@ -734,7 +732,6 @@ out body;
    * Shows the OS location permission dialog, then starts the watcher if granted.
    */
   const requestPermission = useCallback(async () => {
-    if (Platform.OS === "web") return;
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status === "granted") {
       setPermissionStatus("granted");
@@ -751,10 +748,6 @@ out body;
    * On web, location APIs are not used (sensors run in simulation mode).
    */
   useEffect(() => {
-    if (Platform.OS === "web") {
-      setPermissionStatus("denied");  // Web shows "Enable Location" placeholder
-      return;
-    }
     (async () => {
       const { status } = await Location.getForegroundPermissionsAsync();
       if (status === "granted") {

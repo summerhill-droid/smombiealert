@@ -424,18 +424,33 @@ export function DetectionProvider({ children }: { children: React.ReactNode }) {
         analyzeMotion();
       });
     } else {
-      // Web simulation: walking sine wave
-      let t = 0;
-      const sim = setInterval(() => {
-        t += 0.3;
-        accelDataRef.current = {
-          x: Math.sin(t) * 0.5,
-          y: 9 + Math.sin(t * 1.3) * 0.3,
-          z: Math.cos(t) * 0.2,
+      // ── Web: use the browser DeviceMotionEvent API ───────────────────────
+      // iOS 13+ Safari requires explicit permission, which MUST be requested
+      // from a user gesture. This is one (the "Start Monitoring" button).
+      const start = () => {
+        const handler = (e: DeviceMotionEvent) => {
+          const a = e.accelerationIncludingGravity;
+          if (!a) return;
+          // Browser axes match expo-sensors' axes; magnitudes are ~9.8 at rest
+          accelDataRef.current = { x: a.x ?? 0, y: a.y ?? 0, z: a.z ?? 0 };
+          analyzeMotion();
         };
-        analyzeMotion();
-      }, 300);
-      (startMonitoring as unknown as { _sim: ReturnType<typeof setInterval> })._sim = sim;
+        window.addEventListener("devicemotion", handler);
+        (startMonitoring as unknown as { _webHandler: (e: DeviceMotionEvent) => void })._webHandler = handler;
+      };
+
+      const DME = (globalThis as unknown as {
+        DeviceMotionEvent?: { requestPermission?: () => Promise<"granted" | "denied"> };
+      }).DeviceMotionEvent;
+
+      if (DME?.requestPermission) {
+        DME.requestPermission()
+          .then((res) => { if (res === "granted") start(); })
+          .catch(() => { /* user denied or unsupported — silent */ });
+      } else {
+        // Android Chrome / desktop — no permission gate needed
+        start();
+      }
     }
 
     startAlertTimer();
@@ -459,7 +474,12 @@ export function DetectionProvider({ children }: { children: React.ReactNode }) {
     // Deactivate behavior classifier
     deactivateBehavior();
 
-    if (Platform.OS !== "web") Accelerometer.removeAllListeners();
+    if (Platform.OS !== "web") {
+      Accelerometer.removeAllListeners();
+    } else {
+      const h = (startMonitoring as unknown as { _webHandler?: (e: DeviceMotionEvent) => void })._webHandler;
+      if (h) window.removeEventListener("devicemotion", h);
+    }
 
     if (hapticTimerRef.current) {
       clearTimeout(hapticTimerRef.current);
