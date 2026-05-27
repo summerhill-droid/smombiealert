@@ -183,6 +183,9 @@ export function DetectionProvider({ children }: { children: React.ReactNode }) {
   const alertLevelRef   = useRef<AlertLevel>("safe");
   const hapticTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
   const alertTimerRef   = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Web-only: holds the active devicemotion listener so we can remove it on
+  // stopMonitoring or component unmount (avoids leaking a global listener).
+  const webMotionHandlerRef = useRef<((e: DeviceMotionEvent) => void) | null>(null);
 
   // Keep behaviorRef in sync (readable inside analyzeMotion without closure issues)
   useEffect(() => {
@@ -229,6 +232,17 @@ export function DetectionProvider({ children }: { children: React.ReactNode }) {
 
   // ── Persistence ───────────────────────────────────────────────────────
   useEffect(() => { loadData(); }, []);
+
+  // Unmount cleanup: ensure no devicemotion listener leaks if the provider
+  // unmounts while monitoring is active (web only).
+  useEffect(() => {
+    return () => {
+      if (Platform.OS === "web" && webMotionHandlerRef.current) {
+        window.removeEventListener("devicemotion", webMotionHandlerRef.current);
+        webMotionHandlerRef.current = null;
+      }
+    };
+  }, []);
 
   async function loadData() {
     try {
@@ -428,6 +442,8 @@ export function DetectionProvider({ children }: { children: React.ReactNode }) {
       // iOS 13+ Safari requires explicit permission, which MUST be requested
       // from a user gesture. This is one (the "Start Monitoring" button).
       const start = () => {
+        // Guard against double-subscription if Start is tapped twice
+        if (webMotionHandlerRef.current) return;
         const handler = (e: DeviceMotionEvent) => {
           const a = e.accelerationIncludingGravity;
           if (!a) return;
@@ -436,7 +452,7 @@ export function DetectionProvider({ children }: { children: React.ReactNode }) {
           analyzeMotion();
         };
         window.addEventListener("devicemotion", handler);
-        (startMonitoring as unknown as { _webHandler: (e: DeviceMotionEvent) => void })._webHandler = handler;
+        webMotionHandlerRef.current = handler;
       };
 
       const DME = (globalThis as unknown as {
@@ -476,9 +492,9 @@ export function DetectionProvider({ children }: { children: React.ReactNode }) {
 
     if (Platform.OS !== "web") {
       Accelerometer.removeAllListeners();
-    } else {
-      const h = (startMonitoring as unknown as { _webHandler?: (e: DeviceMotionEvent) => void })._webHandler;
-      if (h) window.removeEventListener("devicemotion", h);
+    } else if (webMotionHandlerRef.current) {
+      window.removeEventListener("devicemotion", webMotionHandlerRef.current);
+      webMotionHandlerRef.current = null;
     }
 
     if (hapticTimerRef.current) {

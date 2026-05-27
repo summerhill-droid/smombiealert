@@ -1,0 +1,19 @@
+{
+  "name": "SmombieAlert",
+  "short_name": "SmombieAlert",
+  "description": "AI Pedestrian Safety Guard — detects distracted walking near crosswalks using Seoul GIS + phone sensors.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#E84545",
+  "theme_color": "#E84545",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "192x192 512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
