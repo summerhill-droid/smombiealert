@@ -1,0 +1,87 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "host.exp.exponent",
+    "module": "expo.modules.brightness",
+    "version": "55.0.13",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "9.0.0"
+    }
+  },
+  "variants": [
+    {
+      "name": "releaseVariantReleaseApiPublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-api"
+      },
+      "files": [
+        {
+          "name": "expo.modules.brightness-55.0.13.aar",
+          "url": "expo.modules.brightness-55.0.13.aar",
+          "size": 33330,
+          "sha512": "2589d6b7344f1c42b5cac1c938f27b9096fd2a6ba6d0f9dfa10ffa0e32d57e860b467c1f8b8991b4776751d2889f528a38a7499067be5fa4cd01848539990cd3",
+          "sha256": "209537455cba6bfec44d7090b10543f1ecb24002bba67d87de4f1df39d2e05ec",
+          "sha1": "000d39e14fe9399348160b7ccd3f8b04a38e612f",
+          "md5": "4692033012f57b4d6d597132c3b2a1d3"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseRuntimePublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib-jdk7",
+          "version": {
+            "requires": "2.1.20"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "expo.modules.brightness-55.0.13.aar",
+          "url": "expo.modules.brightness-55.0.13.aar",
+          "size": 33330,
+          "sha512": "2589d6b7344f1c42b5cac1c938f27b9096fd2a6ba6d0f9dfa10ffa0e32d57e860b467c1f8b8991b4776751d2889f528a38a7499067be5fa4cd01848539990cd3",
+          "sha256": "209537455cba6bfec44d7090b10543f1ecb24002bba67d87de4f1df39d2e05ec",
+          "sha1": "000d39e14fe9399348160b7ccd3f8b04a38e612f",
+          "md5": "4692033012f57b4d6d597132c3b2a1d3"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseSourcePublication",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "expo.modules.brightness-55.0.13-sources.jar",
+          "url": "expo.modules.brightness-55.0.13-sources.jar",
+          "size": 2901,
+          "sha512": "97335b458b539083242f2594f98993ad1f75c422117f97201603fa45a08b8987d2ad1ed114074c6fd9ad51cf62a8ef644f109d073c9fea047f98378ece088b20",
+          "sha256": "d52a8e00bb5a47e3bc465eeeeedc2dd57ba39d4c834b5717938717db8e41a33d",
+          "sha1": "2399b5391fcaf73ca50214d598cdfc2b29d71e32",
+          "md5": "14077805014f0b95fa3cb703d1889622"
+        }
+      ]
+    }
+  ]
+}

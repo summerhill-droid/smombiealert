@@ -1,0 +1,16 @@
+{
+  "name": "@expo/ngrok-bin-freebsd-ia32",
+  "description": "ngrok binary for freebsd-ia32",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/expo/ngrok.git",
+    "directory": "packages/ngrok-bin-freebsd-ia32"
+  },
+  "os": [
+    "freebsd"
+  ],
+  "cpu": [
+    "ia32"
+  ],
+  "version": "2.3.41"
+}
