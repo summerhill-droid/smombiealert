@@ -31,7 +31,7 @@ import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-
+import { ProtectionProvider } from "@/context/ProtectionContext";
 import { ErrorBoundary }     from "@/components/ErrorBoundary";
 import { BehaviorProvider }  from "@/context/BehaviorContext";
 import { DetectionProvider } from "@/context/DetectionContext";
@@ -73,14 +73,16 @@ export default function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <GestureHandlerRootView style={{ flex: 1 }}>
             <GISProvider>
-              <SignalProvider>
-                <BehaviorProvider>
-                  <DetectionProvider>
-                    <RootLayoutNav />
-                    <WatchingOverlay />
-                  </DetectionProvider>
-                </BehaviorProvider>
-              </SignalProvider>
+              <ProtectionProvider>
+                <SignalProvider>
+                  <BehaviorProvider>
+                    <DetectionProvider>
+                      <RootLayoutNav />
+                      <WatchingOverlay />
+                    </DetectionProvider>
+                  </BehaviorProvider>
+                </SignalProvider>
+              </ProtectionProvider>
             </GISProvider>
           </GestureHandlerRootView>
         </QueryClientProvider>
