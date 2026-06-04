@@ -49,6 +49,10 @@ function NativeTabLayout() {
         <Icon sf={{ default: "map", selected: "map.fill" }} />
         <Label>Map</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="crosswalks">
+        <Icon sf={{ default: "list.bullet", selected: "list.bullet" }} />
+        <Label>Crosswalks</Label>
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="history">
         <Icon sf={{ default: "clock", selected: "clock.fill" }} />
         <Label>History</Label>
@@ -118,6 +122,18 @@ function ClassicTabLayout() {
               <SymbolView name="map" tintColor={color} size={24} />
             ) : (
               <Feather name="map" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="crosswalks"
+        options={{
+          title: "Crosswalks",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="list.bullet" tintColor={color} size={24} />
+            ) : (
+              <Feather name="list" size={22} color={color} />
             ),
         }}
       />

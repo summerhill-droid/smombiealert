@@ -3,8 +3,10 @@ import INTERSECTIONS_RAW from "@/assets/intersections.json";
 const BASE = "https://t-data.seoul.go.kr/apig/apiman-gateway/tapi";
 // API 키 목록 — 1순위부터 쓰다가 한도(429) 소진되면 다음 키로 자동 전환.
 const API_KEYS = [
-  "8408a984-5a57-40a2-9193-38c8873c040d", // ① 내 키
-  "fc852b2e-4d4d-49c9-8b39-b806e977603f", // ② 새 키
+  "8408a984-5a57-40a2-9193-38c8873c040d", // ① (로그에서 확인된 키 — 네 거 맞으면 그대로)
+  "fc852b2e-4d4d-49c9-8b39-b806e977603f", // ②
+  "f4fea5ed-5868-4c6f-96e9-f5bfd3aa5410",                 // ③ ← 네가 추가한 키로 교체
+  "4da2f70f-1a9e-4158-a545-9a35a386df38",                 // ④ ← 네가 추가한 키로 교체
 ];
 
 // key를 인자로 받게 변경
@@ -15,10 +17,15 @@ function buildSignalUrl(key: string, extra = ""): string {
 // SIGNAL_URL도 시그니처 맞춰서
 export const SIGNAL_URL = buildSignalUrl(API_KEYS[0]);
 
+// 마지막으로 살아있던 키 인덱스. 죽은 키(429)를 매 호출마다 다시 때리지 않도록 기억한다.
+// 한 번 한도 소진되면 그 세션 동안 다음 키부터 시작 → 헛호출(429 왕복) 제거.
+let keyStart = 0;
+
 async function fetchSignalJson(extra = ""): Promise<unknown> {
   let lastErr: unknown;
-  for (let i = 0; i < API_KEYS.length; i++) {       // ← 전역 대신 로컬 i로 순회
-    console.log(`[V2X] 키#${i} 시도 (총 ${API_KEYS.length}개)`); 
+  for (let n = 0; n < API_KEYS.length; n++) {
+    const i = (keyStart + n) % API_KEYS.length;       // 살아있는 키부터 순회
+    console.log(`[V2X] 키#${i} 시도 (총 ${API_KEYS.length}개)`);
     const res = await fetch(buildSignalUrl(API_KEYS[i], extra), {
       headers: { Accept: "application/json" },
     });
@@ -31,10 +38,11 @@ async function fetchSignalJson(extra = ""): Promise<unknown> {
     if (limited) {
       console.warn(`[V2X] 키#${i} 한도 초과 → 다음 키로 전환`);
       lastErr = new Error("rate limit exceeded");
-      continue;                                       // 같은 호출 안에서 바로 다음 키
+      continue;                                       // 다음 키로 (keyStart는 루프 중 변경 금지!)
     }
     if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
     if (json == null) throw new Error("응답을 JSON으로 해석할 수 없습니다");
+    keyStart = i;                                     // 이 키 살아있음 → 다음부터 여기서 시작
     console.log(`[V2X] 사용 키#${i}=${API_KEYS[i].slice(0, 8)} 응답 ${text.length}바이트`);
     return json;
   }
@@ -345,17 +353,28 @@ export function getIntersections(): Intersection[] {
   return INTERSECTIONS;
 }
 
+// numOfRows 최대가 1000이라(2000은 404 거부), 페이지를 여러 장 받아 커버 교차로 수를 늘린다.
+// (3페이지 = 약 3000행 → 중복 제거 후 더 많은 고유 교차로) — 폴링당 요청이 PAGES배.
+const PAGES = 3;
+
 export async function fetchSignals(): Promise<Signal[]> {
-  const data = await fetchSignalJson();
-  const records = findRecords(data);
-  const signals = records
-    .map(normalizeSignal)
-    .filter((x): x is Signal => !!x);
-  console.log(
-    "[V2X] raw 레코드:", records.length,
-    "| 유효 신호:", signals.length,
-    "| itstId:", signals.map((s) => s.itstId).join(","),
+  const pages = Array.from({ length: PAGES }, (_, i) => i + 1);
+  const perPage = await Promise.all(
+    pages.map(async (p) => {
+      try {
+        const recs = findRecords(await fetchSignalJson(`&pageNo=${p}`));
+        return recs.map(normalizeSignal).filter((x): x is Signal => !!x);
+      } catch (e) {
+        console.warn(`[V2X] pageNo=${p} 실패:`, String(e));
+        return [];
+      }
+    }),
   );
+  // itstId 기준 중복 제거 (먼저 본 페이지 우선).
+  const byId = new Map<string, Signal>();
+  for (const arr of perPage) for (const s of arr) if (!byId.has(s.itstId)) byId.set(s.itstId, s);
+  const signals = [...byId.values()];
+  console.log(`[V2X] ${PAGES}페이지 → 고유 교차로 ${signals.length}개`);
   return signals;
 }
 
@@ -388,21 +407,14 @@ export function mergeAndFilter(
 
 export async function fetchSignalsByIds(ids: string[]): Promise<Signal[]> {
   if (!ids.length) return [];
-  // 콤마 다중은 t-data가 500을 주므로 제거. 교차로별 개별 호출만.
-  const per = await Promise.all(
-    ids.map(async (id) => {
-      try {
-        return findRecords(await fetchSignalJson(`&itstId=${id}`))
-          .map(normalizeSignal)
-          .filter((x): x is Signal => !!x);
-      } catch (e) {
-        console.warn(`[V2X] itstId=${id} 실패:`, String(e));
-        return [];
-      }
-    }),
+  // t-data 는 &itstId= 파라미터를 무시하고 항상 전체 피드(약 1000행, ~2.3MB)를 반환한다.
+  // (로그에서 단일 ID 호출도 len≈2.3MB, 5개 호출 = 신호 5000개로 확인됨.)
+  // 따라서 교차로별 N회 호출은 같은 데이터를 N번 받는 낭비 → 전체 1회만 받고 클라에서 필터한다.
+  const all = await fetchSignals();
+  const want = new Set(ids);
+  const filtered = all.filter((s) => want.has(s.itstId));
+  console.log(
+    `[V2X] byIds 요청 ${ids.length}개 → 전체 ${all.length}개 중 매칭 ${filtered.length}개 | ids=${ids.join(",")}`,
   );
-  const flat = per.flat();
-  console.log(`[V2X] byIds 요청 ${ids.length}개 → 신호 ${flat.length}개 | ids=${ids.join(",")}`);
-  return flat;
+  return filtered;
 }
-
