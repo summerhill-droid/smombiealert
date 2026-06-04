@@ -14,7 +14,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
-import { useProtection } from "@/contexts/ProtectionContext";
+import { useProtection } from "@/context/ProtectionContext";
 import {
   useNearbyCsvCrosswalks,
   type NearbyCsvCrosswalk,
@@ -35,8 +35,8 @@ export default function CrosswalksScreen() {
   const all = useNearbyCsvCrosswalks(hasFix ? position : null, null, 10_000);
   const [query, setQuery] = useState("");
 
-  // 검색: `주소` + 괄호 제거된 `교차로명` 양쪽에 대해 부분일치(대소문자 무시).
-  // 한글에는 대소문자 개념이 없지만 영문/기호 검색을 위해 lowerCase 정규화 유지.
+  // 검?? `주소` + 괄호 ?�거??`교차로명` ?�쪽???�??부분일�??�?�문??무시).
+  // ?��??�는 ?�?�문??개념???��?�??�문/기호 검?�을 ?�해 lowerCase ?�규???��?.
   const filtered = useMemo(() => {
     const q = query.trim().toLocaleLowerCase();
     if (!q) return all;
@@ -59,9 +59,9 @@ export default function CrosswalksScreen() {
       <StatusBar style="light" />
 
       <View style={[styles.header, { paddingTop: topPad, borderBottomColor: colors.border }]}>
-        <Text style={[styles.title, { color: colors.foreground }]}>전체 횡단보도</Text>
+        <Text style={[styles.title, { color: colors.foreground }]}>?�체 ?�단보도</Text>
         <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-          가까운 순으로 정렬 · 10초마다 갱신 · 총 {all.length.toLocaleString()}개
+          가까운 ?�으�??�렬 · 10초마??갱신 · �?{all.length.toLocaleString()}�?
         </Text>
 
         <View
@@ -77,7 +77,7 @@ export default function CrosswalksScreen() {
           <TextInput
             value={query}
             onChangeText={setQuery}
-            placeholder="주소 또는 교차로명 검색"
+            placeholder="주소 ?�는 교차로명 검??
             placeholderTextColor={colors.mutedForeground}
             style={[styles.searchInput, { color: colors.foreground }]}
             autoCorrect={false}
@@ -89,7 +89,7 @@ export default function CrosswalksScreen() {
             <Pressable
               onPress={() => setQuery("")}
               hitSlop={10}
-              accessibilityLabel="검색어 지우기"
+              accessibilityLabel="검?�어 지?�기"
             >
               <Feather name="x" size={16} color={colors.mutedForeground} />
             </Pressable>
@@ -101,21 +101,21 @@ export default function CrosswalksScreen() {
         <EmptyState
           colors={colors}
           icon="navigation"
-          title="위치 확인 중…"
-          subtitle="GPS 신호를 잡고 있어요"
+          title="?�치 ?�인 중�?
+          subtitle="GPS ?�호�??�고 ?�어??
         />
       ) : all.length === 0 ? (
         <EmptyState
           colors={colors}
           icon="alert-circle"
-          title="횡단보도 데이터가 없습니다"
-          subtitle="CSV 로드를 확인하세요"
+          title="?�단보도 ?�이?��? ?�습?�다"
+          subtitle="CSV 로드�??�인?�세??
         />
       ) : filtered.length === 0 ? (
         <EmptyState
           colors={colors}
           icon="search"
-          title="검색 결과가 없습니다"
+          title="검??결과가 ?�습?�다"
         />
       ) : (
         <FlatList
