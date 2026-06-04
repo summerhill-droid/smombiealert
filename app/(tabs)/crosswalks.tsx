@@ -1,4 +1,4 @@
-import { Feather } from "@expo/vector-icons";
+﻿import { Feather } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
@@ -35,8 +35,8 @@ export default function CrosswalksScreen() {
   const all = useNearbyCsvCrosswalks(hasFix ? position : null, null, 10_000);
   const [query, setQuery] = useState("");
 
-  // 검?? `주소` + 괄호 ?�거??`교차로명` ?�쪽???�??부분일�??�?�문??무시).
-  // ?��??�는 ?�?�문??개념???��?�??�문/기호 검?�을 ?�해 lowerCase ?�규???��?.
+  // 寃?? `二쇱냼` + 愿꾪샇 ?쒓굅??`援먯감濡쒕챸` ?묒そ?????遺遺꾩씪移???뚮Ц??臾댁떆).
+  // ?쒓??먮뒗 ??뚮Ц??媛쒕뀗???놁?留??곷Ц/湲고샇 寃?됱쓣 ?꾪빐 lowerCase ?뺢퇋???좎?.
   const filtered = useMemo(() => {
     const q = query.trim().toLocaleLowerCase();
     if (!q) return all;
@@ -59,9 +59,9 @@ export default function CrosswalksScreen() {
       <StatusBar style="light" />
 
       <View style={[styles.header, { paddingTop: topPad, borderBottomColor: colors.border }]}>
-        <Text style={[styles.title, { color: colors.foreground }]}>?�체 ?�단보도</Text>
+        <Text style={[styles.title, { color: colors.foreground }]}>?꾩껜 ?〓떒蹂대룄</Text>
         <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-          가까운 ?�으�??�렬 · 10초마??갱신 · �?{all.length.toLocaleString()}�?
+          媛源뚯슫 ?쒖쑝濡??뺣젹 쨌 10珥덈쭏??媛깆떊 쨌 珥?{all.length.toLocaleString()}媛?
         </Text>
 
         <View
@@ -77,7 +77,7 @@ export default function CrosswalksScreen() {
           <TextInput
             value={query}
             onChangeText={setQuery}
-            placeholder="주소 ?�는 교차로명 검??
+            placeholder="二쇱냼 ?먮뒗 援먯감濡쒕챸 寃??
             placeholderTextColor={colors.mutedForeground}
             style={[styles.searchInput, { color: colors.foreground }]}
             autoCorrect={false}
@@ -89,7 +89,7 @@ export default function CrosswalksScreen() {
             <Pressable
               onPress={() => setQuery("")}
               hitSlop={10}
-              accessibilityLabel="검?�어 지?�기"
+              accessibilityLabel="寃?됱뼱 吏?곌린"
             >
               <Feather name="x" size={16} color={colors.mutedForeground} />
             </Pressable>
@@ -101,21 +101,21 @@ export default function CrosswalksScreen() {
         <EmptyState
           colors={colors}
           icon="navigation"
-          title="?�치 ?�인 중�?
-          subtitle="GPS ?�호�??�고 ?�어??
+          title="?꾩튂 ?뺤씤 以묅?
+          subtitle="GPS ?좏샇瑜??↔퀬 ?덉뼱??
         />
       ) : all.length === 0 ? (
         <EmptyState
           colors={colors}
           icon="alert-circle"
-          title="?�단보도 ?�이?��? ?�습?�다"
-          subtitle="CSV 로드�??�인?�세??
+          title="?〓떒蹂대룄 ?곗씠?곌? ?놁뒿?덈떎"
+          subtitle="CSV 濡쒕뱶瑜??뺤씤?섏꽭??
         />
       ) : filtered.length === 0 ? (
         <EmptyState
           colors={colors}
           icon="search"
-          title="검??결과가 ?�습?�다"
+          title="寃??寃곌낵媛 ?놁뒿?덈떎"
         />
       ) : (
         <FlatList
